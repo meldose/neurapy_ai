@@ -303,16 +303,8 @@ class MairaKinematics(Node):
             self.get_logger().error('Failed to fetch EE')
         else:
             self.get_logger().info(f'Using EE: {ee.name}')
-        # rest of unified logic omitted for brevity
-        # ...
 
-    # Core motion & planning methods: move_joint_to_cartesian, move_joint_to_joint, move_linear,
-    # move_linear_via_points, move_joint_via_points, plan_motion_joint_to_joint,
-    # plan_motion_linear, plan_motion_linear_via_points, plan_motion_joint_via_points,
-    # get_current_joint_state, get_current_cartesian_tcp_pose, set_motion_param, wait,
-    # set_motion_till_force, _throw_if_*, _get_ik_solution, _get_elbow_up_ik_solution, cartesian_2_joint
-    # (Implement these as in your original code snippet.)
-
+            
 def main(args=None):
     rclpy.init(args=args)
     node = MairaKinematics()
