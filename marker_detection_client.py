@@ -50,7 +50,7 @@ class MarkerDetectionClient(BaseAiClient):
 
         sub_topic = "/neura_marker_detection/detected_markers"
         self._marker_sub = rospy.Subscriber(
-            sub_topic, DetectedTags, self._marker_detection_cb
+            sub_topic, DetectedTags, self._marker_detection
         )
 
         super(MarkerDetectionClient, self).__init__(
@@ -63,7 +63,7 @@ class MarkerDetectionClient(BaseAiClient):
             has_parameters=False,
         )
 
-    def _marker_detection_cb(self, marker_msg: DetectedTags):
+    def _marker_detection(self, marker_msg: DetectedTags):
         """
         Marker Detection Service Callback
 

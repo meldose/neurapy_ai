@@ -54,17 +54,17 @@ class VoiceControlClient(BaseAiClient):
 
         # subscriber
         self._sub_return_command = rospy.Subscriber(
-            "/command", String, self._return_command_cb
+            "/command", String, self._return_command
         )
         self._sub_command_finished = rospy.Subscriber(
             "/neura_voice_control/command_finished",
             Bool,
-            self._command_finished_cb,
+            self._command_finished,
         )
         self._sub_back_conv = rospy.Subscriber(
             "/neura_voice_control/back_to_conversation",
             Bool,
-            self._back_conv_cb,
+            self._back_conv,
         )
 
         # setup variables.
@@ -248,11 +248,11 @@ class VoiceControlClient(BaseAiClient):
     def _reset_command(self):
         self._last_command = ""
 
-    def _return_command_cb(self, msg):
+    def _return_command(self, msg):
         self._last_command = msg.data
 
-    def _command_finished_cb(self, msg):
+    def _command_finished(self, msg):
         self._command_finished = msg.data
 
-    def _back_conv_cb(self, msg):
+    def _back_conv(self, msg):
         self._command_finished = msg.data

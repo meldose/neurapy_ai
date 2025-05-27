@@ -91,23 +91,23 @@ class DataGenerationClient(BaseAiClient):
         goal.light_energy_min = light_energy_range[0]
         goal.light_energy_max = light_energy_range[1]
 
-        def active_cb():
+        def active():
             self._log.info("Started generating data...")
 
-        def feedback_cb(feedback: DataGenerationFeedback):
+        def feedback(feedback: DataGenerationFeedback):
             self._log.info(f"Progress: {feedback.progress_percentage}%")
 
-        # active_cb: Callable[[None], None] = lambda: self._log.info(
+        # active: Callable[[None], None] = lambda: self._log.info(
         #     "Started generating data..."
         # )
-        # feedback_cb: Callable[[DataGenerationFeedback], None] = (
+        # feedback: Callable[[DataGenerationFeedback], None] = (
         #     lambda feedback: self._log.info(
         #         f"Progress: {feedback.progress_percentage}%"
         #     )
         # )
         try:
             self._data_generation_action_client.send_goal(
-                goal=goal, active_cb=active_cb, feedback_cb=feedback_cb
+                goal=goal, active=active, feedback=feedback
             )
         except rospy.ServiceException as e:
             self._log.error(f"Action call failed: {e}")

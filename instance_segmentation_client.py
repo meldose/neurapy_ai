@@ -507,19 +507,19 @@ class InstanceSegmentationClient(BaseAiClient):
         goal.filter_empty_images = filter_empty_images
         goal.pretrained_model = pretrained_model
 
-        def active_cb():
+        def active():
             self._log.info("Started training segmentation model...")
 
-        def feedback_cb(feedback: TrainModelFeedback):
+        def feedback(feedback: TrainModelFeedback):
             progress = int(
                 feedback.epochs_done / feedback.number_of_epochs * 100
             )
             self._log.info(f"Progress: {progress}%")
 
-        # active_cb: Callable[[None], None] = lambda: self._log.info(
+        # active: Callable[[None], None] = lambda: self._log.info(
         #     "Started training segmentation model..."
         # )
-        # feedback_cb: Callable[[TrainModelFeedback], None] = (
+        # feedback: Callable[[TrainModelFeedback], None] = (
         #     lambda feedback: self._log.info(
         #         f"Progress: {int(feedback.epochs_done/feedback.number_of_epochs*100)}%"
         #     )
@@ -527,7 +527,7 @@ class InstanceSegmentationClient(BaseAiClient):
         # Start training
         try:
             self._train_instance_segmentation_action_client.send_goal(
-                goal=goal, active_cb=active_cb, feedback_cb=feedback_cb
+                goal=goal, active=active, feedback=feedback
             )
         except rospy.ServiceException as e:
             self._log.error(f"Action call failed: {e}")

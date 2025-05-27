@@ -105,7 +105,7 @@ class RobotScanClient(BaseAiClient):
         goal.workspace_name = workspace_name
 
         try:
-            self._action_client.send_goal(goal, feedback_cb=self._feedback_cb)
+            self._action_client.send_goal(goal, feedback=self._feedback)
         except rospy.ServiceException as ex:
             error_msg = f"Sending goal failed! \n {ex}"
             self._log.warning(error_msg)
@@ -113,7 +113,7 @@ class RobotScanClient(BaseAiClient):
 
         return ReturnCode(ReturnCodes.SUCCESS, "SUCCESS!")
 
-    def _feedback_cb(self, feedback):
+    def _feedback(self, feedback):
         """Callback that logs the feedback from the server.
 
         Parameters
