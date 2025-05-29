@@ -1,15 +1,15 @@
-### action/MoveToPose.action
+# ### action/MoveToPose.action
 
-# Goal definition
-geometry_msgs/PoseStamped target_pose
+# # Goal definition
+# geometry_msgs/PoseStamped target_pose
 
-# Result definition
-bool success
+# # Result definition
+# bool success
 
-# Feedback definition
-float32 progress
+# # Feedback definition
+# float32 progress
 
-### database_client.py
+# ### database_client.py
 
 """ROS2 client to read the robot database."""
 import rclpy
