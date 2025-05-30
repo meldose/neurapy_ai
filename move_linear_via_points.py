@@ -6,10 +6,11 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 from builtin_interfaces.msg import Duration
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
-from geometry_msgs.msg import PoseArray
+from geometry_msgs.msg import PoseArray, Pose
 
 
 class MoveJointToJointClient(Node):
+
     def __init__(self):
         super().__init__('move_joint_to_joint_client')
 
@@ -23,13 +24,13 @@ class MoveJointToJointClient(Node):
         # Subscriber for cartesian waypoints
         self.create_subscription(
             PoseArray,
-            '/joint_trajectory_position_controller/follow_joint_trajectory',
+            '/cartesian_waypoints',  
             self.move_linear_via_points,
             10
         )
 
         # Publisher for success/failure
-        self.pub_mlp_res = self.create_publisher(Bool, 'mlp_result', 10)
+        self.pub_mlp_res = self.create_publisher(Bool, '/mlp_result', 10)  # <-- added leading slash
 
         # your joint names
         self.joint_names = [
@@ -38,11 +39,52 @@ class MoveJointToJointClient(Node):
             'maira7M_joint7',
         ]
 
-    def move_linear_via_points(self, msg: PoseArray):
-        # ... existing cartesian path planning & send as before ...
-        pass
+        # placeholders for synchronizing goal results
+        self._last_result_future = None
+        self._last_result = None
 
-    def send_joint_goal(self, joint_state: JointState, duration: float):
+    def _ik_solver(self, pose: Pose) -> list:
+        """
+        Stub IK solver. Replace with your actual IK implementation.
+        Returns a list of joint positions matching self.joint_names.
+        """
+        self.get_logger().warn("IK solver not implemented; returning zero positions.")
+        return [0.0] * len(self.joint_names)
+
+    def move_linear_via_points(self, msg: PoseArray):
+        """
+        Convert each Cartesian pose into a joint goal and execute sequentially.
+        Publishes Bool on '/mlp_result' indicating overall success.
+        """
+        dt_between = 1.0  # seconds between waypoints
+
+        for idx, pose in enumerate(msg.poses):
+            # 1) Solve IK to get joint positions
+            joint_state = JointState()
+            joint_state.name = self.joint_names
+            joint_state.position = self._ik_solver(pose)
+
+            # 2) Send the joint goal
+            success = self.send_joint_goal(joint_state, duration=dt_between)
+            if not success:
+                self.get_logger().error(f"Waypoint {idx} failed to send")
+                self.pub_mlp_res.publish(Bool(data=False))
+                return
+
+            # 3) Wait for result before next waypoint
+            rclpy.spin_until_future_complete(self, self._last_result_future)
+
+            # Check execution result
+            if self._last_result is None or self._last_result.error_code != 0:
+                code = self._last_result.error_code if self._last_result else -1
+                self.get_logger().error(f"Waypoint {idx} execution failed: error_code={code}")
+                self.pub_mlp_res.publish(Bool(data=False))
+                return
+
+        # All waypoints succeeded
+        self.pub_mlp_res.publish(Bool(data=True))
+
+    def send_joint_goal(self, joint_state: JointState, duration: float) -> bool:
         """
         Build and send a FollowJointTrajectory goal with a single waypoint.
         """
@@ -82,8 +124,9 @@ class MoveJointToJointClient(Node):
             self.get_logger().info("Goal rejected")
             return
         self.get_logger().info("Goal accepted")
-        result_future = handle.get_result_async()
-        result_future.add_done_callback(self.get_result_callback)
+        # store the future for synchronization
+        self._last_result_future = handle.get_result_async()
+        self._last_result_future.add_done_callback(self.get_result_callback)
 
     def feedback_callback(self, feedback_msg):
         self.get_logger().info(f"Feedback: {feedback_msg.feedback}")
@@ -91,6 +134,9 @@ class MoveJointToJointClient(Node):
     def get_result_callback(self, future):
         result = future.result().result
         self.get_logger().info(f"Result: error_code={result.error_code}")
+        # store last result for checking
+        self._last_result = result
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -99,13 +145,14 @@ def main(args=None):
     # Example: send a single‐point joint goal
     js = JointState()
     js.name = node.joint_names
-    js.position = [0.5, 0.0, -0.5, 0.5, 0.2, 0.1, 0.2]
+    js.position = [0.5, 0.0, 0.5, -0.5, -0.2, -0.1, -0.2]
     success = node.send_joint_goal(js, duration=3.0)
     if not success:
         node.get_logger().error("Failed to send joint goal!")
 
     rclpy.spin(node)
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
