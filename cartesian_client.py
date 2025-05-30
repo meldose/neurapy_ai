@@ -1,7 +1,16 @@
+import rclpy
+import rclpy.logging
+from rclpy.node import Node
 from rclpy.action import ActionClient
-from my_robot_interfaces.action import MoveToCartesianPose
-from geometry_msgs.msg import Pose
-from std_msgs.msg import Bool
+from control_msgs.action import FollowJointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint
+from sensor_msgs.msg import JointState
+from builtin_interfaces.msg import Duration
+from builtin_interfaces.msg import Duration
+from std_msgs.msg import Bool, String, Int32, Int32MultiArray, Float32MultiArray
+from sensor_msgs.msg import JointState
+from geometry_msgs.msg import Pose, PoseArray
+from trajectory_msgs.msg import JointTrajectory
 
 class MoveCartesianClient(Node):
     def __init__(self):
@@ -10,8 +19,8 @@ class MoveCartesianClient(Node):
         # 1) create the ActionClient for your Cartesian‐motion action
         self._cartesian_client = ActionClient(
             self,
-            MoveToCartesianPose,
-            '/move_to_cartesian_pose'
+            FollowJointTrajectory,
+            '/joint_trajectory_position_controller/follow_joint_trajectory'
         )
 
         # 2) publisher for the Bool response
@@ -32,7 +41,7 @@ class MoveCartesianClient(Node):
 
     def send_cartesian_goal(self, pose: Pose, timeout: float = 5.0):
         """Builds and sends a MoveToCartesianPose goal."""
-        goal_msg = MoveToCartesianPose.Goal()
+        goal_msg = FollowJointTrajectory.Goal()
         goal_msg.target = pose
 
         # Wait for the server to come up
@@ -48,11 +57,11 @@ class MoveCartesianClient(Node):
     def _goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
-            self.get_logger().warn("Cartesian goal rejected 😢")
+            self.get_logger().warn("Cartesian goal rejected ")
             self.pub_mjc_res.publish(Bool(data=False))
             return
 
-        self.get_logger().info("Cartesian goal accepted 👍")
+        self.get_logger().info("Cartesian goal accepted ")
         get_result_future = goal_handle.get_result_async()
         get_result_future.add_done_callback(self._get_result_callback)
 
