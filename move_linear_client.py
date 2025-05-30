@@ -102,7 +102,6 @@ def main(args=None):
         time_list,
         total_duration
     )
-
     rclpy.spin(node)
     node.destroy_node()
 
