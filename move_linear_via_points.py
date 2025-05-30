@@ -30,16 +30,14 @@ class MoveJointToJointClient(Node):
         )
 
         # Publisher for success/failure
-        self.pub_mlp_res = self.create_publisher(Bool, '/mlp_result', 10)  # <-- added leading slash
+        self.pub_mlp_res = self.create_publisher(Bool, '/mlp_result', 10) 
 
-        # your joint names
         self.joint_names = [
             'maira7M_joint1','maira7M_joint2','maira7M_joint3',
             'maira7M_joint4','maira7M_joint5','maira7M_joint6',
             'maira7M_joint7',
         ]
 
-        # placeholders for synchronizing goal results
         self._last_result_future = None
         self._last_result = None
 
@@ -81,7 +79,6 @@ class MoveJointToJointClient(Node):
                 self.pub_mlp_res.publish(Bool(data=False))
                 return
 
-        # All waypoints succeeded
         self.pub_mlp_res.publish(Bool(data=True))
 
     def send_joint_goal(self, joint_state: JointState, duration: float) -> bool:
@@ -142,7 +139,6 @@ def main(args=None):
     rclpy.init(args=args)
     node = MoveJointToJointClient()
 
-    # Example: send a single‐point joint goal
     js = JointState()
     js.name = node.joint_names
     js.position = [0.5, 0.0, 0.5, -0.5, -0.2, -0.1, -0.2]
