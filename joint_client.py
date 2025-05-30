@@ -20,7 +20,7 @@ class MoveJointToJointClient(Node):
 
 
 
-    def send_goal(self, joint_state: JointState, duration: float = 7.0):
+    def send_goal(self, joint_state: JointState, duration: float):
         """
         Send a FollowJointTrajectory goal to the action server.
 
@@ -81,7 +81,7 @@ def main(args=None):
     print('Sending Goal')
 
     #rclpy.spin(node)
-    node.send_goal(joint_state,duration=7.0)
+    node.send_goal(joint_state,duration=8.0)
 
 if __name__ == '__main__':
     main()
