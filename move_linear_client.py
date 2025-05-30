@@ -1,89 +1,115 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-
-# MoveIt2 Python binding
-from moveit2.move_group_interface import MoveGroupInterface
-
 from control_msgs.action import FollowJointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint
+from builtin_interfaces.msg import Duration
+from sensor_msgs.msg import JointState
 
-
-class MoveLinearClient(Node):
+class MoveJointToJointClient(Node):
     def __init__(self):
-        super().__init__('move_linear_client')
-
-        # 1) Create MoveGroupInterface for your arm
-        #
-        #    - group_name must match the MoveIt “planning group” (e.g. “arm”)
-        #    - base_frame and ee_frame must match your URDF
-        self.move_group = MoveGroupInterface(
-            node=self,
-            group_name='arm',
-            base_frame='base_link',
-            ee_frame='ee_link',
-        )
-
-        # 2) Make an ActionClient for your position controller
-        self._traj_client = ActionClient(
+        super().__init__('move_joint_to_joint_client')
+        self._client = ActionClient(
             self,
             FollowJointTrajectory,
             '/joint_trajectory_position_controller/follow_joint_trajectory'
         )
+    def send_multi_waypoint_goal(self,
+        joint_names: list[str],
+        positions_list: list[list[float]],
+        time_list: list[float],
+        duration: float):
 
-        # 3) Wait until the controller’s action server is up
-        if not self._traj_client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error('FollowJointTrajectory action server not available!')
+        goal_msg = FollowJointTrajectory.Goal()
+        goal_msg.trajectory.joint_names = joint_names
+        goal_msg.trajectory.header.stamp = self.get_clock().now().to_msg()
+
+        for pos, t in zip(positions_list, time_list):
+            pt = JointTrajectoryPoint()
+            # cast each element to float
+            pt.positions = [float(p) for p in pos]
+
+            sec = int(t)
+            nsec = int((t - sec) * 1e9)
+            pt.time_from_start = Duration(sec=sec, nanosec=nsec)
+
+            goal_msg.trajectory.points.append(pt)
+
+        if not self._client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error('Action server not available')
             rclpy.shutdown()
             return
 
-    def move_linear(self, dx: float, dy: float, dz: float):
-        # A) Get the current end-effector pose
-        start = self.move_group.get_current_pose().pose
-
-        # B) Build the target pose
-        target = start.__class__()  # Pose()
-        target.position.x = start.position.x + dx
-        target.position.y = start.position.y + dy
-        target.position.z = start.position.z + dz
-        target.orientation = start.orientation
-
-        # C) Plan a cartesian path
-        plan, fraction = self.move_group.compute_cartesian_path(
-            waypoints=[target],
-            eef_step=0.01,       # 1 cm segments
-            jump_threshold=0.0,  # disable jump checks
+        self.get_logger().info(f'Sending {len(goal_msg.trajectory.points)}-point trajectory…')
+        send_goal_future = self._client.send_goal_async(
+            goal_msg,
+            feedback_callback=self.feedback_callback
         )
-        if fraction < 1.0:
-            self.get_logger().warn(f'Only {fraction*100:.1f}% of the path could be planned.')
+        send_goal_future.add_done_callback(self.goal_response_callback)
 
-        # D) Wrap the RobotTrajectory in a FollowJointTrajectory goal
-        goal_msg = FollowJointTrajectory.Goal()
-        goal_msg.trajectory = plan.joint_trajectory
 
-        # E) Send the goal
-        send_goal_future = self._traj_client.send_goal_async(goal_msg)
-        rclpy.spin_until_future_complete(self, send_goal_future)
-        goal_handle = send_goal_future.result()
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
         if not goal_handle.accepted:
-            self.get_logger().error('Trajectory goal rejected by controller')
+            self.get_logger().warn('Goal rejected')
             return
+        self.get_logger().info('Goal accepted, waiting for result…')
+        get_result = goal_handle.get_result_async()
+        get_result.add_done_callback(self.get_result_callback)
 
-        # F) Wait for result
-        result_future = goal_handle.get_result_async()
-        rclpy.spin_until_future_complete(self, result_future)
-        result = result_future.result()
-        if result.error_code != result.SUCCESSFUL:
-            self.get_logger().error(f'Execution failed: code {result.error_code}')
-        else:
-            self.get_logger().info('Motion executed successfully!')
+    def feedback_callback(self, feedback_msg):
+        self.get_logger().info(f'Feedback: {feedback_msg.feedback.actual.positions}')
+
+    def get_result_callback(self, future):
+        result = future.result().result
+        self.get_logger().info(f'Result: error_code={result.error_code}')
+        rclpy.shutdown()
 
 
 def main(args=None):
     rclpy.init(args=args)
-    node = MoveLinearClient()
-    # for example, move straight up 10 cm:
-    node.move_linear(0.0, 0.0, 0.10)
-    rclpy.shutdown()
+    node = MoveJointToJointClient()
+
+    # 1) Joint names
+    joint_names = [
+        'maira7M_joint1',
+        'maira7M_joint2',
+        'maira7M_joint3',
+        'maira7M_joint4',
+        'maira7M_joint5',
+        'maira7M_joint6',
+        'maira7M_joint7',
+    ]
+
+    # 2) A list of N waypoint vectors (one list-of-7-floats per waypoint)
+    positions_list = [
+        [ 0.5, 0,    0,    0,    0,    0,    0],
+        [-0.5, 0,    0,    0,    0,    0,    0],
+        [ 0.5, 0,    0,    0,    0,    0,    0],
+        [-0.5, 0,    0,    0,    0,    0,    0],
+        [ 0.0, 0,    0,    0,    0,    0,    0],
+    ]
+
+    # 3) A matching list of “time_from_start” in seconds for each waypoint
+    #    (must be same length as positions_list)
+    #    Here we spread 5 points evenly over 7 seconds:
+    total_duration = 7.0
+    num_pts = len(positions_list)
+    time_list = [
+        total_duration * (i + 1) / num_pts
+        for i in range(num_pts)
+    ] 
+
+    node.get_logger().info('Sending multi-waypoint goal…')
+    node.send_multi_waypoint_goal(
+        joint_names,
+        positions_list,
+        time_list,
+        total_duration
+    )
+
+    rclpy.spin(node)
+    node.destroy_node()
 
 
 if __name__ == '__main__':
