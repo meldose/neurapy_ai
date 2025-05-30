@@ -11,105 +11,105 @@
 
 # ### database_client.py
 
-"""ROS2 client to read the robot database."""
-import rclpy
-from rclpy.node import Node
-from neura_ai_database_msgs.srv import (
-    ReadEndEffector,
-    ReadTCPPose,
-    ReadWorkspace,
-)
-from std_srvs.srv import Trigger
+# """ROS2 client to read the robot database."""
+# import rclpy
+# from rclpy.node import Node
+# from neura_ai_database_msgs.srv import (
+#     ReadEndEffector,
+#     ReadTCPPose,
+#     ReadWorkspace,
+# )
+# from std_srvs.srv import Trigger
 
-from neurapy_ai.utils.return_codes import ReturnCode, ReturnCodes
-from neurapy_ai.utils.ros_conversions import geometry_msg_pose_2_pose
-from neurapy_ai.utils.types import EndEffector, JointState, Pose, TCPPose, Workspace
+# from neurapy_ai.utils.return_codes import ReturnCode, ReturnCodes
+# from neurapy_ai.utils.ros_conversions import geometry_msg_pose_2_pose
+# from neurapy_ai.utils.types import EndEffector, JointState, Pose, TCPPose, Workspace
 
-class DatabaseClient(Node):
-    """Client to read the robot database in ROS2."""
+# class DatabaseClient(Node):
+#     """Client to read the robot database in ROS2."""
 
-    def __init__(self):
-        super().__init__('neura_ai_database_client')
-        # service clients
-        self._point_client = self.create_client(ReadTCPPose, '/neura_ai_database/read_tcpPose')
-        self._workspace_client = self.create_client(ReadWorkspace, '/neura_ai_database/read_workspace')
-        self._ee_client = self.create_client(ReadEndEffector, '/neura_ai_database/read_end_effector')
-        self._update_client = self.create_client(Trigger, '/neura_ai_database/update_database')
-        # wait for services
-        for client in [self._point_client, self._workspace_client, self._ee_client, self._update_client]:
-            if not client.wait_for_service(timeout_sec=5.0):
-                self.get_logger().error(f"Service {client.srv_name} not available")
-        # update cache
-        self.update_database()
+#     def __init__(self):
+#         super().__init__('neura_ai_database_client')
+#         # service clients
+#         self._point_client = self.create_client(ReadTCPPose, '/neura_ai_database/read_tcpPose')
+#         self._workspace_client = self.create_client(ReadWorkspace, '/neura_ai_database/read_workspace')
+#         self._ee_client = self.create_client(ReadEndEffector, '/neura_ai_database/read_end_effector')
+#         self._update_client = self.create_client(Trigger, '/neura_ai_database/update_database')
+#         # wait for services
+#         for client in [self._point_client, self._workspace_client, self._ee_client, self._update_client]:
+#             if not client.wait_for_service(timeout_sec=5.0):
+#                 self.get_logger().error(f"Service {client.srv_name} not available")
+#         # update cache
+#         self.update_database()
 
-    def get_pose(self, point_name: str):
-        req = ReadTCPPose.Request()
-        req.tcp_point_name = point_name
-        future = self._point_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        resp = future.result()
-        if resp is None:
-            return ReturnCode(ReturnCodes.SERVICE_CALL_FAILED), None, None
-        if resp.return_code.value < 0:
-            return ReturnCode(resp.return_code.value, resp.return_code.message), None, None
-        pose = geometry_msg_pose_2_pose(resp.tcp_pose.transform_tcp2ref)
-        joints = list(resp.tcp_pose.tcp_pose_joint_space)
-        return ReturnCode(), pose, joints
+#     def get_pose(self, point_name: str):
+#         req = ReadTCPPose.Request()
+#         req.tcp_point_name = point_name
+#         future = self._point_client.call_async(req)
+#         rclpy.spin_until_future_complete(self, future)
+#         resp = future.result()
+#         if resp is None:
+#             return ReturnCode(ReturnCodes.SERVICE_CALL_FAILED), None, None
+#         if resp.return_code.value < 0:
+#             return ReturnCode(resp.return_code.value, resp.return_code.message), None, None
+#         pose = geometry_msg_pose_2_pose(resp.tcp_pose.transform_tcp2ref)
+#         joints = list(resp.tcp_pose.tcp_pose_joint_space)
+#         return ReturnCode(), pose, joints
 
-    def get_workspace(self, workspace_name: str):
-        req = ReadWorkspace.Request()
-        req.workspace_name = workspace_name
-        future = self._workspace_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        resp = future.result()
-        if resp.return_code.value < 0:
-            return ReturnCode(resp.return_code.value, resp.return_code.message), None
-        ws = resp.workspace
-        lookats = [
-            TCPPose(
-                geometry_msg_pose_2_pose(point.transform_tcp2ref),
-                JointState(point.tcp_pose_joint_space)
-            ) for point in ws.lookat_points
-        ]
-        workspace = Workspace(
-            pose=geometry_msg_pose_2_pose(ws.transform_workspace2ref),
-            frame=ws.ref_frame,
-            len_x=ws.x_max,
-            len_y=ws.y_max,
-            len_z=ws.z_max,
-            lookat_poses=lookats,
-            name=workspace_name,
-            type="tabletop" if ws.type == ws.TABLETOP else "bin",
-            mesh_model=ws.mesh_model,
-            collision_padding=ws.collision_padding,
-        )
-        return ReturnCode(), workspace
+#     def get_workspace(self, workspace_name: str):
+#         req = ReadWorkspace.Request()
+#         req.workspace_name = workspace_name
+#         future = self._workspace_client.call_async(req)
+#         rclpy.spin_until_future_complete(self, future)
+#         resp = future.result()
+#         if resp.return_code.value < 0:
+#             return ReturnCode(resp.return_code.value, resp.return_code.message), None
+#         ws = resp.workspace
+#         lookats = [
+#             TCPPose(
+#                 geometry_msg_pose_2_pose(point.transform_tcp2ref),
+#                 JointState(point.tcp_pose_joint_space)
+#             ) for point in ws.lookat_points
+#         ]
+#         workspace = Workspace(
+#             pose=geometry_msg_pose_2_pose(ws.transform_workspace2ref),
+#             frame=ws.ref_frame,
+#             len_x=ws.x_max,
+#             len_y=ws.y_max,
+#             len_z=ws.z_max,
+#             lookat_poses=lookats,
+#             name=workspace_name,
+#             type="tabletop" if ws.type == ws.TABLETOP else "bin",
+#             mesh_model=ws.mesh_model,
+#             collision_padding=ws.collision_padding,
+#         )
+#         return ReturnCode(), workspace
 
-    def get_end_effector(self, ee_name: str=''):
-        req = ReadEndEffector.Request()
-        req.end_effector_name = ee_name
-        future = self._ee_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        resp = future.result()
-        if resp.return_code.value < 0:
-            return ReturnCode(resp.return_code.value, resp.return_code.message), None
-        tcp_pose = geometry_msg_pose_2_pose(resp.end_effector.transform_tcp2flange)
-        ee = EndEffector(
-            name=resp.end_effector_name,
-            neura_supported_typename=resp.neura_supported_typename,
-            tcp_pose=tcp_pose,
-        )
-        return ReturnCode(), ee
+#     def get_end_effector(self, ee_name: str=''):
+#         req = ReadEndEffector.Request()
+#         req.end_effector_name = ee_name
+#         future = self._ee_client.call_async(req)
+#         rclpy.spin_until_future_complete(self, future)
+#         resp = future.result()
+#         if resp.return_code.value < 0:
+#             return ReturnCode(resp.return_code.value, resp.return_code.message), None
+#         tcp_pose = geometry_msg_pose_2_pose(resp.end_effector.transform_tcp2flange)
+#         ee = EndEffector(
+#             name=resp.end_effector_name,
+#             neura_supported_typename=resp.neura_supported_typename,
+#             tcp_pose=tcp_pose,
+#         )
+#         return ReturnCode(), ee
 
-    def update_database(self):
-        req = Trigger.Request()
-        future = self._update_client.call_async(req)
-        rclpy.spin_until_future_complete(self, future)
-        resp = future.result()
-        if not resp.success:
-            self.get_logger().error(f"Update failed: {resp.message}")
-            return ReturnCode(False, resp.message)
-        return ReturnCode(True, resp.message)
+#     def update_database(self):
+#         req = Trigger.Request()
+#         future = self._update_client.call_async(req)
+#         rclpy.spin_until_future_complete(self, future)
+#         resp = future.result()
+#         if not resp.success:
+#             self.get_logger().error(f"Update failed: {resp.message}")
+#             return ReturnCode(False, resp.message)
+#         return ReturnCode(True, resp.message)
 
 ### maira_kinematics.py
 
@@ -117,7 +117,7 @@ import threading
 import time
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Bool, String, Int32, Float32MultiArray
+from std_msgs.msg import Bool, String, Int32MultiArray, Float32MultiArray,Int32
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Pose, PoseArray
 import numpy as np
@@ -129,8 +129,8 @@ from neurapy.robot import Robot
 from neurapy.state_flag import cmd
 from neurapy.utils import CmdIDManager
 from database_client import DatabaseClient
-from neurapy_ai.utils.types import Pose as AiPose, EndEffector
-from neurapy_ai_utils.robot.elbow_checker import ElbowChecker
+# from neurapy_ai.utils.types import Pose as AiPose, EndEffector
+# from neurapy_ai_utils.robot.elbow_checker import ElbowChecker
 
 class ThreadSafeCmdIDManager:
     def __init__(self, id_manager=None):
@@ -168,9 +168,9 @@ class MairaKinematics(Node):
         self._robot_state = RobotStatus(self._robot)
         self._program = Program(self._robot)
         self.num_joints = self._robot.dof
-        if require_elbow_up:
-            self._elbow_checker = ElbowChecker(self.num_joints, self._robot.robot_name)
-        # database
+        # if require_elbow_up:
+        #     self._elbow_checker = ElbowChecker(self.num_joints, self._robot.robot_name)
+        # # database
         self._db = DatabaseClient()
         # publishers
         self.joint_publish = self.create_publisher(JointState, 'joint_states', 10)
@@ -213,7 +213,7 @@ class MairaKinematics(Node):
 
     # Callback wrappers
     def _get_current_joint_state(self, msg):
-        joints = self.get_current_joint_state()
+        joints = self._get_current_joint_state()
         js = JointState()
         js.header.stamp = self.get_clock().now().to_msg()
         js.position = joints
@@ -291,7 +291,7 @@ class MairaKinematics(Node):
 
     def cartesian_2_joint(self, msg):
         joint_states = self.cartesian_2_joint([msg.position.x, msg.position.y, msg.position.z,
-                                               msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w])
+        msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w])
         js = JointState()
         js.position = joint_states
         self.pub_ctj.publish(js)
@@ -312,114 +312,114 @@ def main(args=None):
     node.destroy_node()
     rclpy.shutdown()
 
-### server.py
+# ### server.py
 
-import asyncio
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionServer, CancelResponse, GoalResponse
-from geometry_msgs.msg import PoseStamped
-from maira_apps.action import MoveToPose
-from maira_kinematics import MairaKinematics
+# import asyncio
+# import rclpy
+# from rclpy.node import Node
+# from rclpy.action import ActionServer, CancelResponse, GoalResponse
+# from geometry_msgs.msg import PoseStamped
+# from maira_apps.action import MoveToPose
+# from maira_kinematics import MairaKinematics
 
-class MairaActionServer(Node):
-    def __init__(self):
-        super().__init__('maira_action_server')
-        self._kin = MairaKinematics()
-        self._action_server = ActionServer(
-            self, MoveToPose, 'move_to_pose',
-            execute_callback=self.execute_callback,
-            goal_callback=self.goal_callback,
-            cancel_callback=self.cancel_callback)
+# class MairaActionServer(Node):
+#     def __init__(self):
+#         super().__init__('maira_action_server')
+#         self._kin = MairaKinematics()
+#         self._action_server = ActionServer(
+#             self, MoveToPose, 'move_to_pose',
+#             execute_callback=self.execute_callback,
+#             goal_callback=self.goal_callback,
+#             cancel_callback=self.cancel_callback)
 
-    def goal_callback(self, request):
-        return GoalResponse.ACCEPT
+#     def goal_callback(self, request):
+#         return GoalResponse.ACCEPT
 
-    def cancel_callback(self, handle):
-        return CancelResponse.ACCEPT
+#     def cancel_callback(self, handle):
+#         return CancelResponse.ACCEPT
 
-    async def execute_callback(self, handle):
-        feedback = MoveToPose.Feedback()
-        goal = handle.request.target_pose
-        ok, pid, _ = self._kin.plan_motion_linear([goal.pose.position.x,
-                                                  goal.pose.position.y,
-                                                  goal.pose.position.z,
-                                                  goal.pose.orientation.x,
-                                                  goal.pose.orientation.y,
-                                                  goal.pose.orientation.z,
-                                                  goal.pose.orientation.w])
-        if not ok:
-            handle.abort()
-            return MoveToPose.Result(success=False)
-        for i in range(1, 6):
-            if handle.is_cancel_requested:
-                handle.canceled()
-                return MoveToPose.Result(success=False)
-            feedback.progress = i*0.2
-            handle.publish_feedback(feedback)
-            await asyncio.sleep(0.2)
-        success = self._kin._execute_if_successful(pid)
-        result = MoveToPose.Result(success=success)
-        if success:
-            handle.succeed()
-        else:
-            handle.abort()
-        return result
+#     async def execute_callback(self, handle):
+#         feedback = MoveToPose.Feedback()
+#         goal = handle.request.target_pose
+#         ok, pid, _ = self._kin.plan_motion_linear([goal.pose.position.x,
+#                                                   goal.pose.position.y,
+#                                                   goal.pose.position.z,
+#                                                   goal.pose.orientation.x,
+#                                                   goal.pose.orientation.y,
+#                                                   goal.pose.orientation.z,
+#                                                   goal.pose.orientation.w])
+#         if not ok:
+#             handle.abort()
+#             return MoveToPose.Result(success=False)
+#         for i in range(1, 6):
+#             if handle.is_cancel_requested:
+#                 handle.canceled()
+#                 return MoveToPose.Result(success=False)
+#             feedback.progress = i*0.2
+#             handle.publish_feedback(feedback)
+#             await asyncio.sleep(0.2)
+#         success = self._kin._execute_if_successful(pid)
+#         result = MoveToPose.Result(success=success)
+#         if success:
+#             handle.succeed()
+#         else:
+#             handle.abort()
+#         return result
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    server = MairaActionServer()
-    rclpy.spin(server)
-    server.destroy_node()
-    rclpy.shutdown()
+# def main(args=None):
+#     rclpy.init(args=args)
+#     server = MairaActionServer()
+#     rclpy.spin(server)
+#     server.destroy_node()
+#     rclpy.shutdown()
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
 
 
 ### client.py
 
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
-from geometry_msgs.msg import PoseStamped
-from maira_apps.action import MoveToPose
+# import rclpy
+# from rclpy.node import Node
+# from rclpy.action import ActionClient
+# from geometry_msgs.msg import PoseStamped
+# from maira_apps.action import MoveToPose
 
-class MairaActionClient(Node):
-    def __init__(self):
-        super().__init__('maira_action_client')
-        self._client = ActionClient(self, MoveToPose, 'move_to_pose')
+# class MairaActionClient(Node):
+#     def __init__(self):
+#         super().__init__('maira_action_client')
+#         self._client = ActionClient(self, MoveToPose, 'move_to_pose')
 
-    def send_goal(self, pose: PoseStamped):
-        goal = MoveToPose.Goal(target_pose=pose)
-        self._client.wait_for_server()
-        self._client.send_goal_async(goal, feedback_callback=self.feedback_callback)
+#     def send_goal(self, pose: PoseStamped):
+#         goal = MoveToPose.Goal(target_pose=pose)
+#         self._client.wait_for_server()
+#         self._client.send_goal_async(goal, feedback_callback=self.feedback_callback)
 
-    def feedback_callback(self, msg):
-        self.get_logger().info(f"Progress: {msg.feedback.progress*100:.1f}%")
+#     def feedback_callback(self, msg):
+#         self.get_logger().info(f"Progress: {msg.feedback.progress*100:.1f}%")
 
-    def get_result_callback(self, future):
-        result = future.result().result
-        if result.success:
-            self.get_logger().info('Motion completed')
-        else:
-            self.get_logger().error('Motion failed')
+#     def get_result_callback(self, future):
+#         result = future.result().result
+#         if result.success:
+#             self.get_logger().info('Motion completed')
+#         else:
+#             self.get_logger().error('Motion failed')
 
 
-def main(args=None):
-    rclpy.init(args=args)
-    client = MairaActionClient()
-    pose = PoseStamped()
-    pose.header.frame_id = 'base_link'
-    pose.pose.position.x = 0.5
-    pose.pose.position.y = 0.0
-    pose.pose.position.z = 0.2
-    pose.pose.orientation.w = 1.0
-    client.send_goal(pose)
-    rclpy.spin(client)
-    client.destroy_node()
-    rclpy.shutdown()
+# def main(args=None):
+#     rclpy.init(args=args)
+#     client = MairaActionClient()
+#     pose = PoseStamped()
+#     pose.header.frame_id = 'base_link'
+#     pose.pose.position.x = 0.5
+#     pose.pose.position.y = 0.0
+#     pose.pose.position.z = 0.2
+#     pose.pose.orientation.w = 1.0
+#     client.send_goal(pose)
+#     rclpy.spin(client)
+#     client.destroy_node()
+#     rclpy.shutdown()
 
-if __name__ == '__main__':
-    main()
+# if __name__ == '__main__':
+#     main()
