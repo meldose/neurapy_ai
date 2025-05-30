@@ -26,7 +26,7 @@ class MoveJointToJointClient(Node):
 
         for pos, t in zip(positions_list, time_list):
             pt = JointTrajectoryPoint()
-            # cast each element to float
+
             pt.positions = [float(p) for p in pos]
 
             sec = int(t)
@@ -70,7 +70,6 @@ def main(args=None):
     rclpy.init(args=args)
     node = MoveJointToJointClient()
 
-    # 1) Joint names
     joint_names = [
         'maira7M_joint1',
         'maira7M_joint2',
@@ -81,7 +80,6 @@ def main(args=None):
         'maira7M_joint7',
     ]
 
-    # 2) A list of N waypoint vectors (one list-of-7-floats per waypoint)
     positions_list = [
         [ 0.5, 0,    0,    0,    0,    0,    0],
         [-0.5, 0,    0,    0,    0,    0,    0],
@@ -90,9 +88,6 @@ def main(args=None):
         [ 0.0, 0,    0,    0,    0,    0,    0],
     ]
 
-    # 3) A matching list of “time_from_start” in seconds for each waypoint
-    #    (must be same length as positions_list)
-    #    Here we spread 5 points evenly over 7 seconds:
     total_duration = 7.0
     num_pts = len(positions_list)
     time_list = [
