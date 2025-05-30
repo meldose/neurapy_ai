@@ -1,13 +1,15 @@
-import rclpy
+import rclpy # imported rclpy module
 import rclpy.logging
-from rclpy.node import Node
-from rclpy.action import ActionClient
+from rclpy.node import Node # imported the Node 
+from rclpy.action import ActionClient # imported the actionclient
 from control_msgs.action import FollowJointTrajectory
-from trajectory_msgs.msg import JointTrajectoryPoint
-from sensor_msgs.msg import JointState
-from builtin_interfaces.msg import Duration
+from trajectory_msgs.msg import JointTrajectoryPoint # imported the JointTrajectory
+from sensor_msgs.msg import JointState # imported Jointstatess
+from builtin_interfaces.msg import Duration 
 from builtin_interfaces.msg import Duration
 
+
+# created class for MoveJointClient
 class MoveJointToJointClient(Node):
     def __init__(self):
         super().__init__('move_joint_to_joint_client')
@@ -17,9 +19,7 @@ class MoveJointToJointClient(Node):
             FollowJointTrajectory,
             '/joint_trajectory_position_controller/follow_joint_trajectory'
         )
-
-
-
+# function for sending the goal to the robot
     def send_goal(self, joint_state: JointState, duration: float):
         """
         Send a FollowJointTrajectory goal to the action server.
@@ -53,7 +53,7 @@ class MoveJointToJointClient(Node):
         )
         self._send_goal_future.add_done_callback(self.goal_response_callback)
 
-
+# function for response call back 
     def goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
@@ -64,6 +64,7 @@ class MoveJointToJointClient(Node):
         self._get_result_future = goal_handle.get_result_async()
         self._get_result_future.add_done_callback(self.get_result_callback)
 
+# function for feedback callback
     def feedback_callback(self, feedback_msg):
         self.get_logger().info(f'Feedback: {feedback_msg.feedback}')
 
@@ -72,16 +73,18 @@ class MoveJointToJointClient(Node):
         self.get_logger().info(f'Result: error_code={result.error_code}')
         rclpy.shutdown()
 
+# creating the main function
 def main(args=None):
     rclpy.init(args=args)
     node = MoveJointToJointClient()
     joint_state = JointState()
-    joint_state.name = ['maira7M_joint1', 'maira7M_joint2', 'maira7M_joint3', 'maira7M_joint4', 'maira7M_joint5', 'maira7M_joint6', 'maira7M_joint7']
-    joint_state.position = [0.5, 0.0, -0.5, 0.5, 0.2, 0.1, 0.2]
+    joint_state.name = ['maira7M_joint1', 'maira7M_joint2', 'maira7M_joint3', 'maira7M_joint4', 'maira7M_joint5', 'maira7M_joint6', 'maira7M_joint7']# setting the joint state names
+    joint_state.position = [0.5, 0.0, -0.5, 0.5, 0.2, 0.1, 0.2] # setting the joint position
     print('Sending Goal')
 
     #rclpy.spin(node)
     node.send_goal(joint_state,duration=8.0)
 
+# calling the main function
 if __name__ == '__main__':
     main()
