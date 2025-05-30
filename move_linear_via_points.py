@@ -1,14 +1,14 @@
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
+import rclpy # imported rclpy module
+from rclpy.node import Node # imported node 
+from rclpy.action import ActionClient # imported action client 
 from control_msgs.action import FollowJointTrajectory
-from trajectory_msgs.msg import JointTrajectoryPoint
-from builtin_interfaces.msg import Duration
-from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool
-from geometry_msgs.msg import PoseArray, Pose
+from trajectory_msgs.msg import JointTrajectoryPoint # imported TrajectoryPoint 
+from builtin_interfaces.msg import Duration 
+from sensor_msgs.msg import JointState #imported JointState
+from std_msgs.msg import Bool # imported Bool
+from geometry_msgs.msg import PoseArray, Pose # imported Pose
 
-
+# created class for MOveJointTopJointClient
 class MoveJointToJointClient(Node):
 
     def __init__(self):
@@ -41,6 +41,7 @@ class MoveJointToJointClient(Node):
         self._last_result_future = None
         self._last_result = None
 
+# function for ik solver
     def _ik_solver(self, pose: Pose) -> list:
         """
         Stub IK solver. Replace with your actual IK implementation.
@@ -49,6 +50,7 @@ class MoveJointToJointClient(Node):
         self.get_logger().warn("IK solver not implemented; returning zero positions.")
         return [0.0] * len(self.joint_names)
 
+# function for move linear through points
     def move_linear_via_points(self, msg: PoseArray):
         """
         Convert each Cartesian pose into a joint goal and execute sequentially.
@@ -81,6 +83,7 @@ class MoveJointToJointClient(Node):
 
         self.pub_mlp_res.publish(Bool(data=True))
 
+# function for sending the goal to the robot
     def send_joint_goal(self, joint_state: JointState, duration: float) -> bool:
         """
         Build and send a FollowJointTrajectory goal with a single waypoint.
@@ -114,7 +117,8 @@ class MoveJointToJointClient(Node):
         )
         send_future.add_done_callback(self.goal_response_callback)
         return True
-
+    
+# function for response callback 
     def goal_response_callback(self, future):
         handle = future.result()
         if not handle.accepted:
@@ -125,16 +129,18 @@ class MoveJointToJointClient(Node):
         self._last_result_future = handle.get_result_async()
         self._last_result_future.add_done_callback(self.get_result_callback)
 
+# function for feedback callback 
     def feedback_callback(self, feedback_msg):
         self.get_logger().info(f"Feedback: {feedback_msg.feedback}")
 
+# fucntion for geting the result callback 
     def get_result_callback(self, future):
         result = future.result().result
         self.get_logger().info(f"Result: error_code={result.error_code}")
         # store last result for checking
         self._last_result = result
 
-
+# defining the main function 
 def main(args=None):
     rclpy.init(args=args)
     node = MoveJointToJointClient()
@@ -149,6 +155,6 @@ def main(args=None):
     rclpy.spin(node)
     rclpy.shutdown()
 
-
+# calling the main function
 if __name__ == '__main__':
     main()

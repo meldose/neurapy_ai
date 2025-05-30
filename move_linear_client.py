@@ -1,11 +1,13 @@
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
+import rclpy # importing the rclpy module
+from rclpy.node import Node # importing node 
+from rclpy.action import ActionClient # importing the action client 
 from control_msgs.action import FollowJointTrajectory
-from trajectory_msgs.msg import JointTrajectoryPoint
+from trajectory_msgs.msg import JointTrajectoryPoint # importing the joint Trajectory
 from builtin_interfaces.msg import Duration
-from sensor_msgs.msg import JointState
+from sensor_msgs.msg import JointState # imopirting the Jointstate
 
+
+# creating the class for MoveJointtoClient 
 class MoveJointToJointClient(Node):
     def __init__(self):
         super().__init__('move_joint_to_joint_client')
@@ -14,6 +16,8 @@ class MoveJointToJointClient(Node):
             FollowJointTrajectory,
             '/joint_trajectory_position_controller/follow_joint_trajectory'
         )
+
+# function for sending multiple waypoints to the robot
     def send_multi_waypoint_goal(self,
         joint_names: list[str],
         positions_list: list[list[float]],
@@ -47,7 +51,7 @@ class MoveJointToJointClient(Node):
         )
         send_goal_future.add_done_callback(self.goal_response_callback)
 
-
+# creating fuction for goal response callback 
     def goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
@@ -57,15 +61,17 @@ class MoveJointToJointClient(Node):
         get_result = goal_handle.get_result_async()
         get_result.add_done_callback(self.get_result_callback)
 
+# creating function for feeback callback 
     def feedback_callback(self, feedback_msg):
         self.get_logger().info(f'Feedback: {feedback_msg.feedback.actual.positions}')
 
+# function for getting result callback 
     def get_result_callback(self, future):
         result = future.result().result
         self.get_logger().info(f'Result: error_code={result.error_code}')
         rclpy.shutdown()
 
-
+# creating the main function
 def main(args=None):
     rclpy.init(args=args)
     node = MoveJointToJointClient()
@@ -105,6 +111,6 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
 
-
+# alling the main function
 if __name__ == '__main__':
     main()
