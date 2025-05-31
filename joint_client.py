@@ -78,7 +78,7 @@ def main(args=None):
     rclpy.init(args=args)
     node = MoveJointToJointClient()
     joint_state = JointState()
-    joint_state.name = ['maira7M_joint1', 'maira7M_joint2', 'maira7M_joint3', 'maira7M_joint4', 'maira7M_joint5', 'maira7M_joint6', 'maira7M_joint7']# setting the joint state names
+    joint_state.name = ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6', 'joint7']# setting the joint state names
     joint_state.position = [0.5, 0.0, -0.5, 0.5, 0.2, 0.1, 0.2] # setting the joint position
     print('Sending Goal')
 

@@ -33,9 +33,9 @@ class MoveJointToJointClient(Node):
         self.pub_mlp_res = self.create_publisher(Bool, '/mlp_result', 10) 
 
         self.joint_names = [
-            'maira7M_joint1','maira7M_joint2','maira7M_joint3',
-            'maira7M_joint4','maira7M_joint5','maira7M_joint6',
-            'maira7M_joint7',
+            'joint1','joint2','joint3',
+            'joint4','joint5','joint6',
+            'joint7',
         ]
 
         self._last_result_future = None
