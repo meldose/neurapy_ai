@@ -1,13 +1,12 @@
 import rclpy # imported rclpy module
-import rclpy.logging
-from rclpy.node import Node # imported the Node 
-from rclpy.action import ActionClient # imported the actionclient
+from rclpy.node import Node # imported node
+from rclpy.action import ActionClient # imported action client
 from control_msgs.action import FollowJointTrajectory
-from trajectory_msgs.msg import JointTrajectoryPoint # imported the JointTrajectory
-from sensor_msgs.msg import JointState # imported Jointstatess
-from builtin_interfaces.msg import Duration 
+from trajectory_msgs.msg import JointTrajectoryPoint # imported TrajectoryPoint
 from builtin_interfaces.msg import Duration
-
+from sensor_msgs.msg import JointState #imported JointState
+from std_msgs.msg import Bool # imported Bool
+from geometry_msgs.msg import PoseArray, Pose # imported Pose
 
 # created class for MoveJointClient
 class MoveJointToJointClient(Node):
