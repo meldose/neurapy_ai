@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
+import rclpy # mported rclpy module
+from rclpy.node import Node # imported node
+from rclpy.action import ActionClient # imported ActionNode
 
 # Import the action definition
-from control_msgs.action import FollowJointTrajectory
-from trajectory_msgs.msg import JointTrajectoryPoint
+from control_msgs.action import FollowJointTrajectory # imported FollowJointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint # imported JoinTrajectoryPoint
 from builtin_interfaces.msg import Duration
 
+
+# created class for CartesiantojointClient
 class CartesianToJointClient(Node):
     def __init__(self):
         super().__init__('cartesian_to_joint_client')
 
+# created action client
         self._action_client = ActionClient(
             self,
             FollowJointTrajectory,
@@ -30,12 +33,13 @@ class CartesianToJointClient(Node):
 
         self.send_test_trajectory()
 
+# created function for sending the trajectory
     def send_test_trajectory(self):
         """
         Build a simple two‐point joint trajectory and send it as a single goal.
         """
 
-
+        # created the goal message as Trajectory
         goal_msg = FollowJointTrajectory.Goal()
 
         goal_msg.trajectory.joint_names = self.joint_names
@@ -43,7 +47,7 @@ class CartesianToJointClient(Node):
 
         goal_msg.trajectory.header.stamp = self.get_clock().now().to_msg()
 
-
+        # created the class JointTrajectory
         pt1 = JointTrajectoryPoint()
 
         pt1.positions = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
@@ -68,6 +72,7 @@ class CartesianToJointClient(Node):
         )
         send_goal_future.add_done_callback(self.goal_response_callback)
 
+# created function for goal response callback
     def goal_response_callback(self, future):
         """
         Called when the action server has accepted or rejected our goal.
@@ -82,6 +87,7 @@ class CartesianToJointClient(Node):
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self.get_result_callback)
 
+# created function for feedback callback
     def feedback_callback(self, feedback_msg):
         """
         Called whenever the action server sends feedback. You can inspect
@@ -93,6 +99,7 @@ class CartesianToJointClient(Node):
             f"Feedback: actual positions = {['{:.2f}'.format(p) for p in fb.actual.positions]}"
         )
 
+# created fucntion for getting the result callback
     def get_result_callback(self, future):
         """
         Called when the action server finishes executing the trajectory (either success or failure).
@@ -104,12 +111,14 @@ class CartesianToJointClient(Node):
             self.get_logger().error(
                 f" Trajectory execution failed! error_code = {result.error_code}"
             )
-
+# created the main function
 def main(args=None):
     rclpy.init(args=args)
     node = CartesianToJointClient()
     rclpy.spin(node)
     rclpy.shutdown()
 
+
+# calling the main function
 if __name__ == '__main__':
     main()
