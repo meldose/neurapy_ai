@@ -10,19 +10,19 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool
 from geometry_msgs.msg import PoseArray, Pose
 
-
+# created class for Plan MotionLinearVia Points
 class PlanMotionLinearViaPoints(Node):
     def __init__(self):
         super().__init__('plan_motion_linear_via_points')
 
-        # 1) Create an ActionClient for FollowJointTrajectory
+        # Create an ActionClient for FollowJointTrajectory
         self._client = ActionClient(
             self,
             FollowJointTrajectory,
             '/joint_trajectory_position_controller/follow_joint_trajectory'
         )
 
-        # 2) Wait once for the action server to come up
+        # Wait once for the action server to come up
         self.get_logger().info("Waiting for FollowJointTrajectory action server...")
         if not self._client.wait_for_server(timeout_sec=10.0):
             self.get_logger().error("Action server not available after 10 seconds. Shutting down.")
@@ -30,7 +30,7 @@ class PlanMotionLinearViaPoints(Node):
             return
         self.get_logger().info("Action server is available.")
 
-        # 3) Subscribe to Cartesian waypoints topic
+        # Subscribe to Cartesian waypoints topic
         self.create_subscription(
             PoseArray,
             '/cartesian_waypoints',
@@ -38,10 +38,10 @@ class PlanMotionLinearViaPoints(Node):
             10
         )
 
-        # 4) Publisher for success/failure result
+        #  Publisher for success/failure result
         self.pub_result = self.create_publisher(Bool, '/mlp_result', 10)
 
-        # 5) Robot’s joint names (modify to match your robot)
+        # Robot’s joint names (modify to match your robot)
         self.joint_names = [
             'joint1',
             'joint2',
@@ -77,7 +77,7 @@ class PlanMotionLinearViaPoints(Node):
             self.pub_result.publish(Bool(data=True))
             return
 
-        # 1) Compute IK for each pose up front
+        # Compute IK for each pose up front
         joint_trajectories = []
         for idx, pose in enumerate(msg.poses):
             try:
@@ -94,7 +94,7 @@ class PlanMotionLinearViaPoints(Node):
 
             joint_trajectories.append(joint_positions)
 
-        # 2) Construct a single FollowJointTrajectory.Goal
+        # Construct a single FollowJointTrajectory.Goal
         goal_msg = FollowJointTrajectory.Goal()
         goal_msg.trajectory.joint_names = self.joint_names
 
@@ -113,7 +113,7 @@ class PlanMotionLinearViaPoints(Node):
 
         goal_msg.trajectory.points = points
 
-        # 3) Send the goal asynchronously
+        # Send the goal asynchronously
         self.get_logger().info("Sending multi-point trajectory to controller...")
         send_goal_future = self._client.send_goal_async(
             goal_msg,
