@@ -1,23 +1,23 @@
 
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
+import rclpy #imported rclpy module
+from rclpy.node import Node # imported Node module
+from rclpy.action import ActionClient # imported Actionclient
 
-from control_msgs.action import FollowJointTrajectory
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from sensor_msgs.msg import JointState
-from builtin_interfaces.msg import Duration
+from control_msgs.action import FollowJointTrajectory # imported FollowJointTrajectory
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint # imported JointTrajectory and JointTrajectoryPoint
+from sensor_msgs.msg import JointState # imported JointState
+from builtin_interfaces.msg import Duration # imported Duration
 
-
+# created class for MoveJointToJoinClient
 class MoveJointToJointClient(Node):
     def __init__(self):
         super().__init__('move_joint_to_joint_client')
 
-        # 1) Action client for FollowJointTrajectory
+        #  Action client for FollowJointTrajectory
         action_name = '/joint_trajectory_position_controller/follow_joint_trajectory'
         self._client = ActionClient(self, FollowJointTrajectory, action_name)
 
-        # 2) Subscriber to /joint_states (published by joint_state_broadcaster)
+        # Subscriber to /joint_states (published by joint_state_broadcaster)
         self._current_joint_state = None
         self._js_sub = self.create_subscription(
             JointState,
@@ -58,6 +58,7 @@ class MoveJointToJointClient(Node):
         )
         send_goal_future.add_done_callback(self.goal_response_callback)
 
+# created function for goal response callback
     def goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
@@ -68,21 +69,22 @@ class MoveJointToJointClient(Node):
         get_result_future = goal_handle.get_result_async()
         get_result_future.add_done_callback(self.get_result_callback)
 
+# created function for feedback callback
     def feedback_callback(self, feedback_msg):
         # Log any feedback from the action server
         self.get_logger().info(f'Feedback received: {feedback_msg.feedback}')
 
+# created function for get result callback
     def get_result_callback(self, future):
         result = future.result().result
         self.get_logger().info(f'Result received: error_code = {result.error_code}')
         rclpy.shutdown()
 
-
+# created main function
 def main(args=None):
     rclpy.init(args=args)
     node = MoveJointToJointClient()
 
-    # --- Wait up to 2 seconds for the first /joint_states message (from the broadcaster) ---
     t0 = node.get_clock().now()
     while rclpy.ok() and node._current_joint_state is None:
         if (node.get_clock().now().nanoseconds - t0.nanoseconds) > 2e9:
@@ -90,7 +92,6 @@ def main(args=None):
             break
         rclpy.spin_once(node, timeout_sec=0.1)
 
-    # If we did get a JointState, log its contents
     if node._current_joint_state:
         node.get_logger().info(f"Current joint names: {node._current_joint_state.name}")
         node.get_logger().info(f"Current positions: {node._current_joint_state.position}")
@@ -113,6 +114,6 @@ def main(args=None):
 
     rclpy.spin(node)
 
-
+# calling main function
 if __name__ == '__main__':
     main()
