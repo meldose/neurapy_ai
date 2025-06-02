@@ -1,24 +1,28 @@
+import os # imported os module
+import numpy as np # imported numpy module
 
-import os
-import numpy as np
+import rclpy # imported rclpy
+from rclpy.node import Node # imported Node
+from rclpy.action import ActionClient # imported ActionClient
 
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
-
-from control_msgs.action import FollowJointTrajectory
+from control_msgs.action import FollowJointTrajectory # imported FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from sensor_msgs.msg import JointState
-from builtin_interfaces.msg import Duration
+from sensor_msgs.msg import JointState # imported Joinstate
+from builtin_interfaces.msg import Duration # imported Duration
 
-from ikpy.chain import Chain
 
+
+from ikpy.chain import Chain #imported ik
+
+
+# created class for URDF handler
 class URDFChainHandler:
     def __init__(self, urdf_path: str, base_link: str = "maira7M_root_link"):
         self.urdf_path = urdf_path
         self.base_link = base_link
         self.chain = None
 
+# created function for loading chain
     def load_chain(self):
         if not os.path.isfile(self.urdf_path):
             raise FileNotFoundError(f"URDF file not found: {self.urdf_path}")
@@ -30,6 +34,9 @@ class URDFChainHandler:
         for i, link in enumerate(self.chain.links):
             print(f"  {i}: {link.name}")
 
+
+# created function for triming the chain end effector
+
     def trim_chain_to_end_effector(self, end_effector_name: str):
         if not self.chain:
             raise RuntimeError("Chain is not loaded. Call load_chain() first.")
@@ -37,9 +44,12 @@ class URDFChainHandler:
                           if link.name == end_effector_name), None)
         if end_index is None:
             raise ValueError(f"End-effector link '{end_effector_name}' not found")
+        # Keep only up to (and including) the EE link
         self.chain.links = self.chain.links[: end_index + 1]
         self.chain.active_links_mask = self.chain.active_links_mask[: end_index + 1]
         print(f"[URDFChainHandler] Chain trimmed to end-effector: {end_effector_name}")
+
+# created function for inverse kinematics
 
     def inverse_kinematics(self, target_position: np.ndarray,
                            initial_joints: np.ndarray = None) -> np.ndarray:
@@ -47,15 +57,19 @@ class URDFChainHandler:
             raise RuntimeError("Chain is not loaded. Call load_chain() first.")
         if initial_joints is None:
             initial_joints = np.zeros(len(self.chain.links))
+
         joint_angles = self.chain.inverse_kinematics(
             target_position,
             initial_position=initial_joints
         )
-        print("[URDFChainHandler] IK solution:")
+
+        print("[URDFChainHandler] IK solution for target", target_position, ":")
         for i, angle in enumerate(joint_angles):
             print(f"  Joint {i} ({self.chain.links[i].name}): {angle:.4f} rad")
         return joint_angles
 
+
+# created class MovejointToJointClient
 
 class MoveJointToJointClient(Node):
     def __init__(self):
@@ -76,10 +90,12 @@ class MoveJointToJointClient(Node):
             10
         )
 
+# created function for joint state callback
     def _joint_state_callback(self, msg: JointState):
         # Keep overwriting so that _current_joint_state always has the latest
         self._current_joint_state = msg
 
+# created function for seding the goal
     def send_goal(self, goal_joint_state: JointState, duration: float):
         # Build a FollowJointTrajectory.Goal()
         goal_msg = FollowJointTrajectory.Goal()
@@ -106,6 +122,7 @@ class MoveJointToJointClient(Node):
         )
         send_goal_future.add_done_callback(self.goal_response_callback)
 
+# created function for getting the response callback
     def goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
@@ -116,6 +133,7 @@ class MoveJointToJointClient(Node):
         get_result_future = goal_handle.get_result_async()
         get_result_future.add_done_callback(self.get_result_callback)
 
+# created function for getting feedback callback
     def feedback_callback(self, feedback_msg):
         self.get_logger().info(f'Feedback: {feedback_msg.feedback}')
 
@@ -124,7 +142,7 @@ class MoveJointToJointClient(Node):
         self.get_logger().info(f'Result: error_code = {result.error_code}')
         rclpy.shutdown()
 
-
+# created the main function
 def main(args=None):
     rclpy.init(args=args)
 
@@ -158,6 +176,6 @@ def main(args=None):
 
     rclpy.spin(move_joint)
 
-
+# calling the main function
 if __name__ == "__main__":
     main()
