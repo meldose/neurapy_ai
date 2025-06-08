@@ -67,7 +67,9 @@ class URDFChainHandler:
         return joint_angles
 
 # created class for MovejointToclient node
+
 class MoveJointToJointClient(Node):
+
     def __init__(self):
         super().__init__('move_joint_to_joint_client')
 
@@ -88,6 +90,7 @@ class MoveJointToJointClient(Node):
 
 # created function for state callback
     def _joint_state_callback(self, msg: JointState):
+
         # Always keep the latest JointState message
         self._current_joint_state = msg
 
@@ -185,6 +188,7 @@ class MoveJointToJointClient(Node):
 # crearted the main function
 
 def main(args=None):
+
     rclpy.init(args=args)
 
     #  Set up IK handler
