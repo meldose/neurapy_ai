@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
+import rclpy # imported rclpy moudule
+from rclpy.node import Node # imported Node 
+from rclpy.action import ActionClient # imported Action client 
 from control_msgs.action import FollowJointTrajectory
-from trajectory_msgs.msg import JointTrajectoryPoint
-from builtin_interfaces.msg import Duration
-from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool
-from geometry_msgs.msg import PoseArray, Pose
+from trajectory_msgs.msg import JointTrajectoryPoint # imported JointTrajectory
+from builtin_interfaces.msg import Duration # imported Duration
+from sensor_msgs.msg import JointState #imported JOinstate
+from std_msgs.msg import Bool # imported Bool
+from geometry_msgs.msg import PoseArray, Pose #imported Pose
 
 # created class for Plan MotionLinearVia Points
 class PlanMotionLinearViaPoints(Node):
@@ -55,6 +55,7 @@ class PlanMotionLinearViaPoints(Node):
         # Placeholder for the result future
         self._result_future = None
 
+# created function for ik solver
     def _ik_solver(self, pose: Pose) -> list:
         """
         Stub IK solver. Replace with a real IK implementation.
@@ -64,6 +65,7 @@ class PlanMotionLinearViaPoints(Node):
         self.get_logger().warn("IK solver not implemented; returning zero positions.")
         return [0.0] * len(self.joint_names)
 
+# created function for move_linear
     def move_linear_via_points(self, msg: PoseArray):
         """
         Callback executed whenever a PoseArray arrives on '/cartesian_waypoints'.
@@ -121,6 +123,8 @@ class PlanMotionLinearViaPoints(Node):
         )
         send_goal_future.add_done_callback(self._goal_response_callback)
 
+
+# created function for getting goal response callback 
     def _goal_response_callback(self, future):
         """
         Called when the action server accepts or rejects the trajectory goal.
@@ -135,12 +139,16 @@ class PlanMotionLinearViaPoints(Node):
         self._result_future = goal_handle.get_result_async()
         self._result_future.add_done_callback(self._get_result_callback)
 
+
+# created function for getting feeback call back 
     def _feedback_callback(self, feedback_msg):
         """
         Called whenever the action server publishes feedback during trajectory execution.
         """
         self.get_logger().info(f"Received feedback: {feedback_msg.feedback}")
 
+
+# created function for getting result callback
     def _get_result_callback(self, future):
         """
         Called once the trajectory execution is complete (success or failure).
@@ -157,7 +165,7 @@ class PlanMotionLinearViaPoints(Node):
             )
             self.pub_result.publish(Bool(data=False))
 
-
+# main function
 def main(args=None):
     rclpy.init(args=args)
     node = PlanMotionLinearViaPoints()
@@ -166,6 +174,6 @@ def main(args=None):
     rclpy.spin(node)
     rclpy.shutdown()
 
-
+# calling main function
 if __name__ == '__main__':
     main()

@@ -26,10 +26,14 @@ class MoveJointToJointClient(Node):
             10
         )
 
+
+# create function for joint state callback
     def _joint_state_callback(self, msg: JointState):
         # Simply remember the latest incoming JointState message
         self._current_joint_state = msg
 
+
+# function for sending goal to the robot 
     def send_goal(self, joint_state: JointState, duration: float):
         goal_msg = FollowJointTrajectory.Goal()
 

@@ -10,7 +10,8 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from sensor_msgs.msg import JointState # imported Joinstate
 from builtin_interfaces.msg import Duration # imported Duration
 
-from ikpy.chain import Chain
+from ikpy.chain import Chain # imported ik
+
 
 # created class for URDF handler
 class URDFChainHandler:

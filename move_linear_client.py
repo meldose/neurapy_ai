@@ -1,7 +1,7 @@
 import rclpy # importing the rclpy module
 from rclpy.node import Node # importing node 
 from rclpy.action import ActionClient # importing the action client 
-from control_msgs.action import FollowJointTrajectory
+from control_msgs.action import FollowJointTrajectory # imported FollowJointTrajectory
 from trajectory_msgs.msg import JointTrajectoryPoint # importing the joint Trajectory
 from builtin_interfaces.msg import Duration
 from sensor_msgs.msg import JointState # imopirting the Jointstate
@@ -51,7 +51,7 @@ class MoveJointToJointClient(Node):
         )
         send_goal_future.add_done_callback(self.goal_response_callback)
 
-# creating fuction for goal response callback 
+# creating function for goal response callback 
     def goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
@@ -61,7 +61,7 @@ class MoveJointToJointClient(Node):
         get_result = goal_handle.get_result_async()
         get_result.add_done_callback(self.get_result_callback)
 
-# creating function for feeback callback 
+# creating function for feedback callback 
     def feedback_callback(self, feedback_msg):
         self.get_logger().info(f'Feedback: {feedback_msg.feedback.actual.positions}')
 
@@ -86,6 +86,7 @@ def main(args=None):
         'joint7',
     ]
 
+# created an default position list 
     positions_list = [
         [ 0.5, 0,    0,    0,    0,    0,    0],
         [-0.5, 0,    0,    0,    0,    0,    0],
@@ -111,6 +112,6 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
 
-# alling the main function
+# calling the main function
 if __name__ == '__main__':
     main()
