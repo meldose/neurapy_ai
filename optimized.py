@@ -1,60 +1,23 @@
 #!/usr/bin/env python3
 import os
-import sys
 import time
+from typing import List, Optional, Tuple, Union, Any
+
 import numpy as np
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
-from rclpy.duration import Duration as RclpyDuration
+
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from control_msgs.action import FollowJointTrajectory
 from control_msgs.msg import JointTolerance
 from builtin_interfaces.msg import Duration
+
 from ikpy.chain import Chain
 from scipy.spatial.transform import Rotation as R
-import tf2_ros
-from geometry_msgs.msg import TransformStamped
-try:
-    from tf_transformations import euler_from_quaternion
-except ImportError:
-    def euler_from_quaternion(q):
-        return tuple(R.from_quat(q).as_euler('xyz'))
 
-# ——————————————————————————————————————————————————————————————————————————————
-# Helpers & stubs
-# ——————————————————————————————————————————————————————————————————————————————
-def normalize_to_pi(angles: np.ndarray) -> np.ndarray:
-    """Wrap each element of angles to the range [-π, π)."""
-    return (angles + np.pi) % (2.0 * np.pi) - np.pi
-
-class calculation:
-    Success = 1
-    Failed  = 0
-
-class IDManager:
-    """Simply hands out incrementing integer IDs."""
-    def __init__(self):
-        self._id = 0
-    def update_id(self) -> int:
-        self._id += 1
-        return self._id
-
-class PlannerProgram:
-    """Stub planner to record commands for plan_motion_* calls."""
-    class _Cmd:
-        Linear = object()
-    def __init__(self):
-        self.cmd = self._Cmd()
-        self._last_joint = {}
-    def set_command(self, cmd, cmd_id:int, current_joint_angles:list, reusable_id:int, **kwargs):
-        self._last_joint[cmd_id] = current_joint_angles
-    def get_last_joint_configuration(self, plan_id:int) -> list:
-        return self._last_joint.get(plan_id, [])
-    def get_plan_status(self, plan_id:int):
-        return calculation.Success
-
+# Optional CORBA for clear_ids()
 try:
     from omniORB import CORBA
     from MairaCorba import Component
@@ -62,386 +25,459 @@ try:
 except ImportError:
     _CORBA_AVAILABLE = False
 
-# ——————————————————————————————————————————————————————————————————————————————
-# URDF + IK handler
-# ——————————————————————————————————————————————————————————————————————————————
+
+def normalize_to_pi(angles: np.ndarray) -> np.ndarray:
+    """Wrap angles into [-π, π)."""
+    return (angles + np.pi) % (2.0 * np.pi) - np.pi
+
+
 class URDFChainHandler:
-    def __init__(self, urdf_path:str, base_link:str="maira7M_root_link"):
+    def __init__(self, urdf_path: str, base_link: str = "maira7M_root_link"):
         if not os.path.isfile(urdf_path):
             raise FileNotFoundError(f"URDF file not found: {urdf_path}")
         self.chain = Chain.from_urdf_file(urdf_path, base_elements=[base_link])
-        # only actuated joints (links 2–8) are active
-        self.actuated_indices = list(range(2,9))
-        mask = [False]*len(self.chain.links)
-        for i in self.actuated_indices:
-            mask[i] = True
-        self.chain.active_links_mask = mask
+        # by default, actuated joints are links 2..8
+        self.actuated_indices = list(range(2, 9))
 
-    def print_indices(self):
-        print("[URDFChainHandler] Hard-coded joint indices:")
-        for i in self.actuated_indices:
-            print(f"  {i}: {self.chain.links[i].name}")
-
-    def inverse_kinematics(self, target_position:np.ndarray, initial_joints:np.ndarray=None)->np.ndarray:
+    def inverse_kinematics(
+        self,
+        target_position: np.ndarray,
+        initial_joints: np.ndarray = None
+    ) -> np.ndarray:
         if initial_joints is None:
             initial_joints = np.zeros(len(self.chain.links))
-        sol = self.chain.inverse_kinematics(
+        return self.chain.inverse_kinematics(
             target_position,
             initial_position=initial_joints
         )
-        return sol
 
-# ——————————————————————————————————————————————————————————————————————————————
-# Main node
-# ——————————————————————————————————————————————————————————————————————————————
+
+class IDManager:
+    """Simple incrementing ID generator."""
+    def __init__(self):
+        self._id = 0
+
+    def update_id(self) -> int:
+        self._id += 1
+        return self._id
+
+
+class PlannerProgram:
+    """Stub planner interface."""
+    class _Cmd:
+        Linear = object()
+    def __init__(self):
+        self.cmd = self._Cmd()
+        self._last_joint = {}
+
+    def set_command(self, cmd, cmd_id: int, current_joint_angles: List[float], reusable_id: int, **kwargs):
+        # store last solution for stub
+        self._last_joint[cmd_id] = current_joint_angles
+
+    def get_last_joint_configuration(self, plan_id: int) -> List[float]:
+        return self._last_joint.get(plan_id, [])
+
+    def get_plan_status(self, plan_id: int) -> int:
+        # always succeed stub
+        return 1  # 1 = Success, 0 = Failed
+
+
 class MairaKinematics(Node):
-    def __init__(self,
-                 urdf_path:str,
-                 program:PlannerProgram=None,
-                 id_manager:IDManager=None,
-                 robot_state_client=None):
+    def __init__(
+        self,
+        urdf_path: str,
+        program: PlannerProgram,
+        id_manager: IDManager,
+        robot_interface: Any = None,
+        base_link: str = "maira7M_root_link"
+    ):
         super().__init__('maira_kinematics')
 
-        # IK handler
-        self.ik = URDFChainHandler(urdf_path)
-        self.program    = program    or PlannerProgram()
-        self.id_manager = id_manager or IDManager()
-        self.robot_state_client = robot_state_client
+        # IK
+        self.urdf_handler = URDFChainHandler(urdf_path, base_link)
 
-        # ROS2 interfaces
-        self._current_state:JointState = None
-        self.create_subscription(JointState,'/joint_states',self._joint_state_cb,10)
+        # Trajectory action client
+        self._client = ActionClient(
+            self,
+            FollowJointTrajectory,
+            '/joint_trajectory_position_controller/follow_joint_trajectory'
+        )
 
-        # For TF2-based pose lookup
-        self.tf_buffer   = tf2_ros.Buffer()
-        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer,self)
+        # Joint state subscriber
+        self._current_state: Optional[JointState] = None
+        self.create_subscription(
+            JointState,
+            '/joint_states',
+            self.joint_state_callback,
+            10
+        )
 
-        # Single action client for all trajectory goals
-        self.client = ActionClient(self,FollowJointTrajectory,
-                                   '/joint_trajectory_position_controller/follow_joint_trajectory')
+        # Planning stubs
+        self._program = program
+        self._id_manager = id_manager
+        self._robot = robot_interface
 
-        # defaults
-        self.speed_linear = 0.2   # m/s
-        self.acc_linear   = 0.5   # m/s²
-        self._last_err    = None
-        self._waiting     = False
+        # Defaults
+        self.speed_move_linear = 0.1
+        self.acc_move_linear = 0.05
+        self.num_waypoints = 10
+        self._last_error_code: Optional[int] = None
+        self._waiting_for_result = False
 
-    # ——————————————————————————————————————————————————————————————————————————
-    # State callbacks & getters
-    # ——————————————————————————————————————————————————————————————————————————
-    def _joint_state_cb(self,msg:JointState):
-        self._current_state = msg
 
-    def get_current_joint_state(self)->list[float]:
-        """Prefer external interface, else /joint_states."""
-        if self.robot_state_client:
-            try:
-                return self.robot_state_client.getRobotStatus("jointAngles")
-            except Exception as e:
-                self.get_logger().warn(f"robot_state error: {e}")
-        if not self._current_state:
-            self.get_logger().warn("No joint state available yet.")
-            return []
+    # ------------------------
+    # Core Callbacks
+    # ------------------------
+    def joint_state_callback(self, msg: JointState):
+        """Cache the first received joint state."""
+        if self._current_state is None:
+            self._current_state = msg
+
+    def feedback_callback(self, feedback_msg):
+        """Generic feedback: log desired vs actual."""
+        fb = feedback_msg.feedback
+        for name, d, a in zip(fb.joint_names, fb.desired.positions, fb.actual.positions):
+            self.get_logger().info(f"[feedback] {name}: desired={d:.4f}, actual={a:.4f}")
+
+    def goal_response_callback(self, future):
+        goal_handle = future.result()
+        if not goal_handle.accepted:
+            self.get_logger().warn("Goal rejected by server.")
+            self._waiting_for_result = False
+            return
+        self.get_logger().info("Goal accepted, awaiting result...")
+        goal_handle.get_result_async().add_done_callback(self.get_result_callback)
+
+    def get_result_callback(self, future):
+        result = future.result().result
+        self._last_error_code = result.error_code
+        self.get_logger().info(f"Result received: error_code={result.error_code}")
+        self._waiting_for_result = False
+
+
+    # ------------------------
+    # State Queries
+    # ------------------------
+    def get_current_joint_state(self) -> List[float]:
+        """Return current joint positions."""
+        if self._current_state is None:
+            raise RuntimeError("No joint state received yet")
         return list(self._current_state.position)
 
-    def get_current_cartesian_pose(self)->list[float]:
-        """
-        Forward-kinematics via IK chain.
-        Returns [x,y,z,roll,pitch,yaw].
-        """
-        js = self.get_current_joint_state()
-        if not js:
-            return []
-        full = np.zeros(len(self.ik.chain.links))
-        for i, idx in enumerate(self.ik.actuated_indices):
-            full[idx] = js[i]
-        T = self.ik.chain.forward_kinematics(full)
-        xyz = T[:3,3]
-        rpy = R.from_matrix(T[:3,:3]).as_euler('xyz',degrees=False)
-        return [float(v) for v in (*xyz,*rpy)]
+    def get_current_cartesian_pose(self) -> List[float]:
+        """Forward-kinematics from last joint state → [x,y,z, roll,pitch,yaw]."""
+        if self._current_state is None:
+            raise RuntimeError("No joint state received yet")
+        # build full link vector
+        full = np.zeros(len(self.urdf_handler.chain.links))
+        for i, idx in enumerate(self.urdf_handler.actuated_indices):
+            full[idx] = self._current_state.position[i]
+        T = self.urdf_handler.chain.forward_kinematics(full)
+        xyz = T[:3, 3].tolist()
+        rpy = R.from_matrix(T[:3, :3]).as_euler('xyz', degrees=False).tolist()
+        return xyz + rpy
 
-    def get_current_cartesian_pose_tf(self,
-                                      source_frame='maira7M_root_link',
-                                      target_frame='ee_link')->list[float]:
-        """Lookup via TF2."""
-        try:
-            now = rclpy.time.Time()
-            t:TransformStamped = self.tf_buffer.lookup_transform(
-                source_frame,target_frame,now,
-                timeout=RclpyDuration(seconds=1.0)
-            )
-        except Exception as e:
-            self.get_logger().warn(f"TF2 lookup failed: {e}")
-            return []
-        tr = t.transform.translation
-        rt = t.transform.rotation
-        rpy = euler_from_quaternion([rt.x,rt.y,rt.z,rt.w])
-        return [tr.x,tr.y,tr.z,*rpy]
 
-    # ——————————————————————————————————————————————————————————————————————————
-    # Core send helper
-    # ——————————————————————————————————————————————————————————————————————————
-    def _send_goal(self,joint_names:list[str], points:list[JointTrajectoryPoint])->bool:
+    # ------------------------
+    # Simple Move Helpers
+    # ------------------------
+    def send_joint_trajectory(self, joint_names: List[str], joint_positions: List[float], duration: float):
+        """Single-point FollowJointTrajectory goal."""
         goal = FollowJointTrajectory.Goal()
-        goal.trajectory.joint_names = joint_names
-        goal.trajectory.points      = points
-        goal.trajectory.header.stamp = self.get_clock().now().to_msg()
+        traj = JointTrajectory()
+        traj.joint_names = joint_names
 
-        if not self.client.wait_for_server(timeout_sec=5.0):
-            self.get_logger().error("Action server unavailable")
-            return False
-
-        fut = self.client.send_goal_async(goal,
-                                         feedback_callback=self._fb_cb)
-        fut.add_done_callback(self._res_cb)
-        return True
-
-    def _build_point(self,positions:list[float], duration:float)->JointTrajectoryPoint:
-        p = JointTrajectoryPoint()
-        p.positions = positions
+        pt = JointTrajectoryPoint()
+        pt.positions = joint_positions
         sec = int(duration)
-        p.time_from_start = Duration(sec=sec,
-                                     nanosec=int((duration-sec)*1e9))
-        return p
+        nsec = int((duration - sec) * 1e9)
+        pt.time_from_start = Duration(sec=sec, nanosec=nsec)
+        traj.points = [pt]
 
-    def _fb_cb(self,feedback):
-        # joint feedback
-        names   = feedback.feedback.joint_names
-        des     = feedback.feedback.desired.positions
-        act     = feedback.feedback.actual.positions
-        for nm,d,a in zip(names,des,act):
-            self.get_logger().info(f"[fb] {nm}: des={d:.4f}, act={a:.4f}")
-        # live TCP via IK
-        pose6d = self.get_current_cartesian_pose()
-        if pose6d:
-            x,y,z,roll,pitch,yaw = pose6d
-            self.get_logger().info(f" Live TCP: x={x:.3f},y={y:.3f},z={z:.3f}, roll={roll:.2f}")
-
-    def _res_cb(self,future):
-        res = future.result().result
-        self.get_logger().info(f"Result code = {res.error_code}")
-        # final TCP
-        pose6d = self.get_current_cartesian_pose()
-        if pose6d:
-            x,y,z,roll,pitch,yaw=pose6d
-            self.get_logger().info(f" Final TCP: x={x:.3f},y={y:.3f},z={z:.3f}")
-
-    # ——————————————————————————————————————————————————————————————————————————
-    # Trajectory validity
-    # ——————————————————————————————————————————————————————————————————————————
-    def is_trajectory_valid(self,traj:list[list[float]])->bool:
-        try:
-            n = len(self.ik.actuated_indices)
-            if not isinstance(traj,list) or not traj:
-                raise TypeError("Trajectory must be non-empty list.")
-            for w in traj:
-                if not isinstance(w,list) or len(w)!=n:
-                    raise ValueError(f"Each waypoint needs {n} joints")
-            return True
-        except Exception as e:
-            self.get_logger().error(f"Invalid trajectory: {e}")
+        goal.trajectory = traj
+        if not self._client.wait_for_server(timeout_sec=5.0):
+            self.get_logger().error("Action server not available.")
             return False
 
-    # ——————————————————————————————————————————————————————————————————————————
-    # 1-point joint → joint
-    # ——————————————————————————————————————————————————————————————————————————
-    def move_joint_to_joint(self,target:list[float],duration:float=1.0)->bool:
-        cur = self.get_current_joint_state()
-        if not cur:
-            return False
-        if not self.is_trajectory_valid([target]):
-            return False
-        names = [f"joint{i+1}" for i in range(len(target))]
-        pt = self._build_point(target,duration)
-        return self._send_goal(names,[pt])
+        self._waiting_for_result = True
+        send_future = self._client.send_goal_async(
+            goal,
+            feedback_callback=self.feedback_callback
+        )
+        send_future.add_done_callback(self.goal_response_callback)
+        # wait until result callback flips flag
+        while rclpy.ok() and self._waiting_for_result:
+            rclpy.spin_once(self, timeout_sec=0.1)
+        return (self._last_error_code == FollowJointTrajectory.Result().SUCCESSFUL)
 
-    # ——————————————————————————————————————————————————————————————————————————
-    # Cartesian→joint (single-point)
-    # ——————————————————————————————————————————————————————————————————————————
-    def move_to_cartesian(self,xyz:list[float],duration:float=5.0)->bool:
-        if not self._current_state:
+
+    # ------------------------
+    # Cartesian ↔ Joint Moves
+    # ------------------------
+    def cartesian_to_joint(self, goal_state: JointState, duration: float):
+        """Helper to wrap existing JointState into a trajectory."""
+        return self.send_joint_trajectory(goal_state.name, list(goal_state.position), duration)
+
+    def move_joint_to_cartesian(self, goal_pose: List[float], duration: float = 5.0) -> bool:
+        """Compute IK for [x,y,z] and send joint goal."""
+        if self._current_state is None:
+            self.get_logger().error("No joint state yet")
+            return False
+        # seed full
+        full = np.zeros(len(self.urdf_handler.chain.links))
+        for i, idx in enumerate(self.urdf_handler.actuated_indices):
+            full[idx] = self._current_state.position[i]
+        sol = self.urdf_handler.inverse_kinematics(np.array(goal_pose), full)
+        actuated = normalize_to_pi(sol[self.urdf_handler.actuated_indices])
+        names = [f"joint{i+1}" for i in range(len(actuated))]
+        return self.send_joint_trajectory(names, actuated.tolist(), duration)
+
+    def get_elbow_up_ik_solution(self, target_pos: np.ndarray) -> np.ndarray:
+        """Try elbow‐up seeds, fallback to first valid."""
+        if self._current_state is None:
+            raise RuntimeError("No joint state yet")
+        base = np.zeros(len(self.urdf_handler.chain.links))
+        for i, idx in enumerate(self.urdf_handler.actuated_indices):
+            base[idx] = self._current_state.position[i]
+        seeds = [(0.0,0.0), (0.0,np.pi), (np.pi,0.0), (np.pi,np.pi)]
+        first = None
+        for d6, d7 in seeds:
+            seed = base.copy()
+            i6, i7 = self.urdf_handler.actuated_indices[4], self.urdf_handler.actuated_indices[5]
+            seed[i6] += ((seed[i6]<0)*2-1)*d6
+            seed[i7] += ((seed[i7]<0)*2-1)*d7
+            try:
+                sol = self.urdf_handler.inverse_kinematics(target_pos, seed)
+                return sol
+            except Exception:
+                if first is None:
+                    try:
+                        first = self.urdf_handler.inverse_kinematics(target_pos, seed)
+                    except Exception:
+                        pass
+        if first is not None:
+            return first
+        raise ValueError("No IK solution found")
+
+    def ik_solver(self, goal_pose: List[float]) -> Optional[List[float]]:
+        """Wrap IK solver and return actuated-joint list."""
+        sol = self.get_elbow_up_ik_solution(np.array(goal_pose[:3]))
+        actuated = sol[self.urdf_handler.actuated_indices]
+        return normalize_to_pi(np.array(actuated)).tolist()
+
+
+    # ------------------------
+    # Joint ↔ Joint Moves
+    # ------------------------
+    def move_joint_to_joint(self, target_positions: List[float], duration: float = 1.0) -> bool:
+        """Simple one-point joint → joint move."""
+        if self._current_state is None:
             self.get_logger().warn("No joint state yet")
             return False
-        # seed full chain
-        seed = np.zeros(len(self.ik.chain.links))
-        for i,idx in enumerate(self.ik.actuated_indices):
-            seed[idx] = self._current_state.position[i]
-        sol = self.ik.inverse_kinematics(np.array(xyz),seed)
-        actu = normalize_to_pi(sol[self.ik.actuated_indices])
-        names = [f"joint{i+1}" for i in range(len(actu))]
-        return self._send_goal(names,[self._build_point(actu.tolist(),duration)])
+        names = list(self._current_state.name)
+        return self.send_joint_trajectory(names, target_positions, duration)
 
-    # ——————————————————————————————————————————————————————————————————————————
-    # Elbow-up IK + send
-    # ——————————————————————————————————————————————————————————————————————————
-    def get_elbow_up_solution(self,xyz:list[float])->np.ndarray:
-        if not self._current_state:
-            raise RuntimeError("No joint state yet")
-        base = np.zeros(len(self.ik.chain.links))
-        for i,idx in enumerate(self.ik.actuated_indices):
-            base[idx] = self._current_state.position[i]
-        # fixed offset seeds
-        presets=[(0,0),(0,np.pi),(np.pi,0),(np.pi,np.pi)]
-        first=None
-        for d6,d7 in presets:
-            seed = base.copy()
-            i6,i7 = self.ik.actuated_indices[4],self.ik.actuated_indices[5]
-            seed[i6]+=((seed[i6]<0)*2-1)*d6
-            seed[i7]+=((seed[i7]<0)*2-1)*d7
-            try:
-                sol=self.ik.inverse_kinematics(np.array(xyz),seed)
-                if first is None: first=sol
-            except: pass
-        if first is not None: return first
-        # random restarts
-        for _ in range(10):
-            seed=base.copy()
-            seed[self.ik.actuated_indices]+=np.random.uniform(-np.pi,np.pi,7)
-            try: return self.ik.inverse_kinematics(np.array(xyz),seed)
-            except: pass
-        raise ValueError("No IK solution")
-
-    def move_cartesian_elbow_up(self,xyz:list[float],duration:float=5.0)->bool:
-        sol = self.get_elbow_up_solution(xyz)
-        actu = normalize_to_pi(sol[self.ik.actuated_indices])
-        names=[f"joint{i+1}" for i in range(len(actu))]
-        return self._send_goal(names,[self._build_point(actu.tolist(),duration)])
-
-    # ——————————————————————————————————————————————————————————————————————————
-    # Joint-via-points
-    # ——————————————————————————————————————————————————————————————————————————
-    def move_joint_via_points(self,
-                               pts:list[list[float]],
-                               times:list[float],
-                               speed_scale:float=None)->bool:
-        if not self.is_trajectory_valid(pts):
+    def is_trajectory_valid(self, trajectory: List[List[float]]) -> bool:
+        """Check each waypoint length matches current joint count."""
+        if self._current_state is None:
+            self.get_logger().warn("No joint state yet")
             return False
-        names=[f"joint{i+1}" for i in range(len(pts[0]))]
-        points=[]
-        prev,prev_t=None,None
-        for t_raw,p in zip(times,pts):
-            t=(t_raw/speed_scale) if speed_scale else t_raw
-            pt=JointTrajectoryPoint()
-            pt.positions=p
-            pt.time_from_start=Duration(sec=int(t),
-                                        nanosec=int((t-int(t))*1e9))
-            if prev is not None:
-                dt=max(t-prev_t,1e-6)
-                pt.velocities=[(c-p0)/dt for c,p0 in zip(p,prev)]
-            else:
-                pt.velocities=[0.0]*len(p)
-            points.append(pt)
-            prev,prev_t=p,t
-        return self._send_goal(names,points)
+        n = len(self._current_state.name)
+        for wp in trajectory:
+            if not isinstance(wp, list) or len(wp) != n:
+                self.get_logger().error(f"Invalid waypoint length: expected {n}, got {len(wp)}")
+                return False
+        return True
 
-    # ——————————————————————————————————————————————————————————————————————————
-    # Linear-via-points
-    # ——————————————————————————————————————————————————————————————————————————
-    def move_linear_via_points(self,
-                               pts:list[list[float]],
-                               times:list[float],
-                               speed_scale:float=None)->bool:
-        return self.move_joint_via_points(pts,times,speed_scale)
 
-    # ——————————————————————————————————————————————————————————————————————————
-    # Plan-motion (stubs)
-    # ——————————————————————————————————————————————————————————————————————————
-    def is_id_successful(self,plan_id:int,timeout:float=10.0)->tuple[bool,bool]:
-        start=time.time()
-        status=self.program.get_plan_status(plan_id)
-        while status not in (calculation.Success,calculation.Failed) and time.time()-start<timeout:
+    # ------------------------
+    # Plan‐Motion Stubs
+    # ------------------------
+    def plan_motion_linear(
+        self,
+        goal_pose: List[float],
+        start_cartesian_pose: List[float] = None,
+        start_joint_states: List[float] = None,
+        speed: float = None,
+        acc: float = None,
+        reusable: bool = False
+    ) -> Tuple[Tuple[bool,bool], int, List[float]]:
+        """Stub: delegate to PlannerProgram."""
+        if start_cartesian_pose is None or start_joint_states is None:
+            start_cartesian_pose = self.get_current_cartesian_pose()
+            start_joint_states = self.get_current_joint_state()
+        pid = self._id_manager.update_id()
+        self._program.set_command(
+            self._program.cmd.Linear,
+            cmd_id=pid,
+            current_joint_angles=start_joint_states,
+            reusable_id=int(reusable),
+            target_pose=[start_cartesian_pose, goal_pose],
+            speed=speed or self.speed_move_linear,
+            acceleration=acc or self.acc_move_linear,
+            blending=False,
+            blend_radius=0.0
+        )
+        flags = self.is_id_successful(pid)
+        last = self._program.get_last_joint_configuration(pid) if all(flags) else []
+        return flags, pid, last
+
+    def plan_motion_joint_to_joint(
+        self,
+        goal_pose: List[float],
+        start_joint_states: List[float] = None,
+        speed: float = None,
+        acc: float = None,
+        reusable: bool = False
+    ) -> Tuple[Tuple[bool,bool], int, List[float]]:
+        """Stub: joint‐to‐joint planning."""
+        if start_joint_states is None:
+            start_joint_states = self.get_current_joint_state()
+        pid = self._id_manager.update_id()
+        self._program.set_command(
+            self._program.cmd.Linear,
+            cmd_id=pid,
+            current_joint_angles=start_joint_states,
+            reusable_id=int(reusable),
+            target_pose=[start_joint_states, goal_pose],
+            speed=speed or self.speed_move_linear,
+            acceleration=acc or self.acc_move_linear,
+            blending=False,
+            blend_radius=0.0
+        )
+        flags = self.is_id_successful(pid)
+        last = self._program.get_last_joint_configuration(pid) if all(flags) else []
+        return flags, pid, last
+
+    def plan_motion_linear_via_points(
+        self,
+        goal_poses: List[List[float]],
+        start_cartesian_pose: List[float] = None,
+        start_joint_states: List[float] = None,
+        speed: float = None,
+        acc: float = None,
+        blending_radius: float = None,
+        reusable: bool = False
+    ) -> Tuple[Tuple[bool,bool], int, List[float]]:
+        """Stub: linear via‐points planning."""
+        if start_cartesian_pose is None or start_joint_states is None:
+            start_cartesian_pose = self.get_current_cartesian_pose()
+            start_joint_states = self.get_current_joint_state()
+        all_targets = [start_cartesian_pose] + goal_poses
+        pid = self._id_manager.update_id()
+        self._program.set_command(
+            self._program.cmd.Linear,
+            cmd_id=pid,
+            current_joint_angles=start_joint_states,
+            reusable_id=int(reusable),
+            target_pose=all_targets,
+            speed=speed or self.speed_move_linear,
+            acceleration=acc or self.acc_move_linear,
+            blending=True,
+            blend_radius=blending_radius or 0.01
+        )
+        flags = self.is_id_successful(pid)
+        last = self._program.get_last_joint_configuration(pid) if all(flags) else []
+        return flags, pid, last
+
+
+    # ------------------------
+    # “Real” Trajectory via Points
+    # ------------------------
+    def move_linear_via_points(
+        self,
+        positions_list: List[List[float]],
+        times_list: List[float],
+        speed_scale: float = 1.0
+    ) -> bool:
+        """Send a multi‐point Cartesian linear move (via IK)."""
+        # first, compute IK sequence
+        if len(positions_list) != len(times_list):
+            raise ValueError("positions and times length mismatch")
+        joint_traj: List[List[float]] = []
+        for pose in positions_list:
+            js = self.ik_solver(pose)
+            if js is None:
+                raise RuntimeError(f"IK failed for {pose}")
+            joint_traj.append(js)
+        # then send as joint‐via‐points
+        return self.move_joint_via_points(joint_traj, times_list, speed_scale)
+
+    def move_joint_via_points(
+        self,
+        positions_list: List[List[float]],
+        times_list: List[float],
+        speed_scale: float = 1.0
+    ) -> bool:
+        """Send a multi‐point joint trajectory."""
+        if not self.is_trajectory_valid(positions_list):
+            return False
+        traj = JointTrajectory()
+        traj.joint_names = list(self._current_state.name)
+        prev_pos = None
+        prev_time = 0.0
+        for t_raw, pos in zip(times_list, positions_list):
+            t = t_raw / speed_scale
+            pt = JointTrajectoryPoint()
+            pt.positions = pos
+            dt = 1e-6 if prev_pos is None else max(t - prev_time, 1e-6)
+            pt.velocities = [ (p - pp)/dt for p, pp in zip(pos, prev_pos or pos) ]
+            sec = int(t); nsec = int((t-sec)*1e9)
+            pt.time_from_start = Duration(sec=sec, nanosec=nsec)
+            traj.points.append(pt)
+            prev_pos = pos; prev_time = t
+        goal = FollowJointTrajectory.Goal()
+        goal.trajectory = traj
+        self._waiting_for_result = True
+        send_fut = self._client.send_goal_async(goal, feedback_callback=self.feedback_callback)
+        send_fut.add_done_callback(self.goal_response_callback)
+        while rclpy.ok() and self._waiting_for_result:
+            rclpy.spin_once(self, timeout_sec=0.1)
+        return (self._last_error_code == FollowJointTrajectory.Result().SUCCESSFUL)
+
+
+    # ------------------------
+    # ID / CORBA Helpers
+    # ------------------------
+    def is_id_successful(self, plan_id: int, timeout: float = 10.0) -> Tuple[bool,bool]:
+        """Poll PlannerProgram.get_plan_status until Success/Failed."""
+        start = time.time()
+        status = self._program.get_plan_status(plan_id)
+        while status not in (0, 1) and (time.time() - start) < timeout:
             time.sleep(0.01)
-            status=self.program.get_plan_status(plan_id)
-        return (status==calculation.Success,status==calculation.Success)
+            status = self._program.get_plan_status(plan_id)
+        return (status == 1, status == 1)
 
-    def is_plan_successful(self,plan_id:int,timeout:float=10.0)->bool:
-        ok,_ = self.is_id_successful(plan_id,timeout); return ok
+    def is_plan_successful(self, plan_id: int, timeout: float = 10.0) -> bool:
+        ok, _ = self.is_id_successful(plan_id, timeout)
+        return ok
 
-    def clear_ids(self,ids:list[int])->bool:
-        if not _CORBA_AVAILABLE:
-            self.get_logger().warn("CORBA not available"); return False
+    def clear_ids(self, ids: List[int]) -> bool:
+        """Clear given plan IDs from robot via CORBA."""
+        if not _CORBA_AVAILABLE or self._robot is None:
+            self.get_logger().warn("CORBA not available or robot interface missing")
+            return False
         try:
-            rts = Component(self.robot_state_client,"RTS")
-            seq = CORBA.Any(CORBA.TypeCode("IDL:omg.org/CORBA/DoubleSeq:1.0"),ids)
-            return (rts.callService("clearSplineId",[seq])==0)
+            rts = Component(self._robot, "RTS")
+            seq = CORBA.Any(CORBA.TypeCode("IDL:omg.org/CORBA/DoubleSeq:1.0"), ids)
+            return (rts.callService("clearSplineId", [seq]) == 0)
         except Exception as e:
-            self.get_logger().error(f"clear_ids error: {e}")
+            self.get_logger().error(f"Error clearing IDs: {e}")
             return False
 
-    def plan_motion_linear(self,
-                           goal_pose:list[float],
-                           start_cart=None,
-                           start_js=None,
-                           speed:float=None,
-                           acc:float=None,
-                           reusable:bool=False):
-        if not (start_cart and start_js):
-            start_cart=self.get_current_cartesian_pose()
-            start_js  =self.get_current_joint_state()
-        props={
-            "target_pose":[start_cart,goal_pose],
-            "speed":     speed or self.speed_linear,
-            "acceleration": acc or self.acc_linear,
-            "blending": False,
-            "blend_radius":0.0
-        }
-        pid=self.id_manager.update_id()
-        self.program.set_command(self.program.cmd.Linear,
-                                 cmd_id=pid,
-                                 current_joint_angles=start_js,
-                                 reusable_id=int(reusable),
-                                 **props)
-        flags,_  = self.is_id_successful(pid),None
-        last_j   = self.program.get_last_joint_configuration(pid) if all(flags) else []
-        return flags,pid,last_j
 
-    def plan_motion_joint_to_joint(self,
-                                   goal_js:list[float],
-                                   start_js:list[float]=None,
-                                   speed:float=None,acc:float=None,
-                                   reusable:bool=False):
-        if start_js is None:
-            start_js=self.get_current_joint_state()
-        assert len(goal_js)==len(start_js)
-        pid=self.id_manager.update_id()
-        self.program.set_command(self.program.cmd.Linear,
-                                 cmd_id=pid,
-                                 current_joint_angles=start_js,
-                                 reusable_id=int(reusable),
-                                 target_pose=[start_js,goal_js],
-                                 speed=speed or self.speed_linear,
-                                 acceleration=acc or self.acc_linear,
-                                 blending=False,blend_radius=0.0)
-        flags,_=self.is_id_successful(pid),None
-        last=self.program.get_last_joint_configuration(pid) if all(flags) else []
-        return flags,pid,last
-
-# ——————————————————————————————————————————————————————————————————————————————
-# Example usage
-# ——————————————————————————————————————————————————————————————————————————————
 def main(args=None):
     rclpy.init(args=args)
     urdf = os.path.expanduser(
         '~/neura/sim_ws/src/neura_robot_description/maira7M/urdf/maira7M.urdf'
     )
-    node = MairaKinematics(urdf)
-
-    # wait for first joint state
-    while rclpy.ok() and node._current_state is None:
-        rclpy.spin_once(node,timeout_sec=0.1)
-
-    node.get_logger().info("1) move_joint_to_joint")
-    node.move_joint_to_joint([0.2,0.4,-0.1,0.0,0.1,-0.2,0.3],duration=2.0)
-
-    # uncomment any of the following to test the rest:
-    # node.move_to_cartesian([0.5,0.0,0.3],duration=4.0)
-    # node.move_cartesian_elbow_up([0.3,-0.2,0.5],duration=5.0)
-    # node.move_joint_via_points([[0,0.3,0.2,-0.1,0,0.1,0],[0.2,0.5,0.4,0.1,0.2,0.3,0.1]],[2.0,5.0])
-    # node.move_linear_via_points([[0,0.3,0.2,-0.1,0,0.1,0],[0.2,0.5,0.4,0.1,0.2,0.3,0.1]],[2.0,5.0],speed_scale=1.2)
-
+    program = PlannerProgram()
+    idm = IDManager()
+    node = MairaKinematics(urdf, program, idm, robot_interface=None)
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()
