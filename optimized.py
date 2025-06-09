@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-import os
-import time
-from typing import List, Optional, Tuple, Union, Any
+import os # imported os 
+import time # imported time module 
+from typing import List, Optional, Tuple, Union, Any # imported List, Optional, Tuple
 
-import numpy as np
-import rclpy
-from rclpy.node import Node
-from rclpy.action import ActionClient
+import numpy as np # imported numpy
+import rclpy # imported rclpy
+from rclpy.node import Node # imported Node
+from rclpy.action import ActionClient # imported Action client
 
-from sensor_msgs.msg import JointState
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from control_msgs.action import FollowJointTrajectory
-from control_msgs.msg import JointTolerance
-from builtin_interfaces.msg import Duration
+from sensor_msgs.msg import JointState # imported Jointstate
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint # imported JointTrajectory
+from control_msgs.action import FollowJointTrajectory # imported FollowjoińtTrajectory
+from control_msgs.msg import JointTolerance # imported JOinTolerance
+from builtin_interfaces.msg import Duration # imported Duration
 
-from ikpy.chain import Chain
-from scipy.spatial.transform import Rotation as R
+from ikpy.chain import Chain # imported ik 
+from scipy.spatial.transform import Rotation as R #imported Rotation
 
 # Optional CORBA for clear_ids()
 try:
@@ -25,12 +25,13 @@ try:
 except ImportError:
     _CORBA_AVAILABLE = False
 
-
+# function to normalize pi
 def normalize_to_pi(angles: np.ndarray) -> np.ndarray:
     """Wrap angles into [-π, π)."""
     return (angles + np.pi) % (2.0 * np.pi) - np.pi
 
 
+# class URDF handler
 class URDFChainHandler:
     def __init__(self, urdf_path: str, base_link: str = "maira7M_root_link"):
         if not os.path.isfile(urdf_path):
@@ -39,6 +40,7 @@ class URDFChainHandler:
         # by default, actuated joints are links 2..8
         self.actuated_indices = list(range(2, 9))
 
+# function for inverse kinematics
     def inverse_kinematics(
         self,
         target_position: np.ndarray,
@@ -81,7 +83,7 @@ class PlannerProgram:
         # always succeed stub
         return 1  # 1 = Success, 0 = Failed
 
-
+# class Mairakinematics
 class MairaKinematics(Node):
     def __init__(
         self,
@@ -128,17 +130,22 @@ class MairaKinematics(Node):
     # ------------------------
     # Core Callbacks
     # ------------------------
+
+# function for joint state callback 
     def joint_state_callback(self, msg: JointState):
         """Cache the first received joint state."""
         if self._current_state is None:
             self._current_state = msg
 
+# function for feeback callback 
     def feedback_callback(self, feedback_msg):
         """Generic feedback: log desired vs actual."""
         fb = feedback_msg.feedback
         for name, d, a in zip(fb.joint_names, fb.desired.positions, fb.actual.positions):
             self.get_logger().info(f"[feedback] {name}: desired={d:.4f}, actual={a:.4f}")
 
+
+# function for goal response callback 
     def goal_response_callback(self, future):
         goal_handle = future.result()
         if not goal_handle.accepted:
@@ -148,6 +155,7 @@ class MairaKinematics(Node):
         self.get_logger().info("Goal accepted, awaiting result...")
         goal_handle.get_result_async().add_done_callback(self.get_result_callback)
 
+# function for getting result callback 
     def get_result_callback(self, future):
         result = future.result().result
         self._last_error_code = result.error_code
@@ -157,13 +165,16 @@ class MairaKinematics(Node):
 
     # ------------------------
     # State Queries
-    # ------------------------
+    # -----------------------
+
+# function for getting current joint state
     def get_current_joint_state(self) -> List[float]:
         """Return current joint positions."""
         if self._current_state is None:
             raise RuntimeError("No joint state received yet")
         return list(self._current_state.position)
 
+# function for getting current cartesian pose 
     def get_current_cartesian_pose(self) -> List[float]:
         """Forward-kinematics from last joint state → [x,y,z, roll,pitch,yaw]."""
         if self._current_state is None:
@@ -181,6 +192,8 @@ class MairaKinematics(Node):
     # ------------------------
     # Simple Move Helpers
     # ------------------------
+
+# function for sending joint trajectory
     def send_joint_trajectory(self, joint_names: List[str], joint_positions: List[float], duration: float):
         """Single-point FollowJointTrajectory goal."""
         goal = FollowJointTrajectory.Goal()
@@ -214,10 +227,13 @@ class MairaKinematics(Node):
     # ------------------------
     # Cartesian ↔ Joint Moves
     # ------------------------
+
+# function for cartesain to joint 
     def cartesian_to_joint(self, goal_state: JointState, duration: float):
         """Helper to wrap existing JointState into a trajectory."""
         return self.send_joint_trajectory(goal_state.name, list(goal_state.position), duration)
 
+# function for joint to cartesian 
     def move_joint_to_cartesian(self, goal_pose: List[float], duration: float = 5.0) -> bool:
         """Compute IK for [x,y,z] and send joint goal."""
         if self._current_state is None:
@@ -232,6 +248,8 @@ class MairaKinematics(Node):
         names = [f"joint{i+1}" for i in range(len(actuated))]
         return self.send_joint_trajectory(names, actuated.tolist(), duration)
 
+
+# function for getting elbow up ik solution 
     def get_elbow_up_ik_solution(self, target_pos: np.ndarray) -> np.ndarray:
         """Try elbow‐up seeds, fallback to first valid."""
         if self._current_state is None:
@@ -259,6 +277,8 @@ class MairaKinematics(Node):
             return first
         raise ValueError("No IK solution found")
 
+
+# function for ik solver
     def ik_solver(self, goal_pose: List[float]) -> Optional[List[float]]:
         """Wrap IK solver and return actuated-joint list."""
         sol = self.get_elbow_up_ik_solution(np.array(goal_pose[:3]))
@@ -269,6 +289,8 @@ class MairaKinematics(Node):
     # ------------------------
     # Joint ↔ Joint Moves
     # ------------------------
+
+# function for move joint to joint
     def move_joint_to_joint(self, target_positions: List[float], duration: float = 1.0) -> bool:
         """Simple one-point joint → joint move."""
         if self._current_state is None:
@@ -277,6 +299,8 @@ class MairaKinematics(Node):
         names = list(self._current_state.name)
         return self.send_joint_trajectory(names, target_positions, duration)
 
+
+# function for trajectory is valid or not 
     def is_trajectory_valid(self, trajectory: List[List[float]]) -> bool:
         """Check each waypoint length matches current joint count."""
         if self._current_state is None:
@@ -293,6 +317,8 @@ class MairaKinematics(Node):
     # ------------------------
     # Plan‐Motion Stubs
     # ------------------------
+
+# function for plan moiton linear 
     def plan_motion_linear(
         self,
         goal_pose: List[float],
@@ -322,6 +348,7 @@ class MairaKinematics(Node):
         last = self._program.get_last_joint_configuration(pid) if all(flags) else []
         return flags, pid, last
 
+# function for plan motion joint to joint 
     def plan_motion_joint_to_joint(
         self,
         goal_pose: List[float],
@@ -349,6 +376,7 @@ class MairaKinematics(Node):
         last = self._program.get_last_joint_configuration(pid) if all(flags) else []
         return flags, pid, last
 
+# function for plan motion linear via points
     def plan_motion_linear_via_points(
         self,
         goal_poses: List[List[float]],
@@ -384,6 +412,8 @@ class MairaKinematics(Node):
     # ------------------------
     # “Real” Trajectory via Points
     # ------------------------
+
+# function for move linear via points 
     def move_linear_via_points(
         self,
         positions_list: List[List[float]],
@@ -403,6 +433,7 @@ class MairaKinematics(Node):
         # then send as joint‐via‐points
         return self.move_joint_via_points(joint_traj, times_list, speed_scale)
 
+# function for move joints via points
     def move_joint_via_points(
         self,
         positions_list: List[List[float]],
@@ -439,6 +470,8 @@ class MairaKinematics(Node):
     # ------------------------
     # ID / CORBA Helpers
     # ------------------------
+
+# function for checking if id is succesful
     def is_id_successful(self, plan_id: int, timeout: float = 10.0) -> Tuple[bool,bool]:
         """Poll PlannerProgram.get_plan_status until Success/Failed."""
         start = time.time()
@@ -448,10 +481,13 @@ class MairaKinematics(Node):
             status = self._program.get_plan_status(plan_id)
         return (status == 1, status == 1)
 
+# function for checking ig plan is succesful or not 
     def is_plan_successful(self, plan_id: int, timeout: float = 10.0) -> bool:
         ok, _ = self.is_id_successful(plan_id, timeout)
         return ok
 
+
+# function for clearing ids
     def clear_ids(self, ids: List[int]) -> bool:
         """Clear given plan IDs from robot via CORBA."""
         if not _CORBA_AVAILABLE or self._robot is None:
@@ -465,7 +501,7 @@ class MairaKinematics(Node):
             self.get_logger().error(f"Error clearing IDs: {e}")
             return False
 
-
+# main function 
 def main(args=None):
     rclpy.init(args=args)
     urdf = os.path.expanduser(
@@ -478,6 +514,6 @@ def main(args=None):
     node.destroy_node()
     rclpy.shutdown()
 
-
+# calling main function 
 if __name__ == "__main__":
     main()
